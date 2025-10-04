@@ -31,7 +31,7 @@ const navigation = [
   { name: "Contratos /Edição", href: "/contract", icon: Folder },
   { name: "Despesas Gerais", href: "/despesas", icon: Wallet },
   { name: "Histórico de Vendas", href: "/historico-de-vendas", icon: Receipt },
-  // { name: "Histórico de Contratos", href: "/contract", icon: CreditCard },
+  { name: "Lucro por Moto", href: "/motos-lucro", icon: BarChart2 },
   
 ]
 
