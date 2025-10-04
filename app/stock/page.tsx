@@ -256,19 +256,11 @@ export default function EstoquePage() {
                     setVerMaisModalOpen(false)
                     handleVenderMoto(motoSelecionada)
                   }}
-                  className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+                  className="flex-1 bg-black hover:bg-black text-white"
                 >
                   Vender Moto →
                 </Button>
-                <Button
-                  onClick={() => {
-                    setDocumentosModalOpen(true)
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Emitir Documentos
-                </Button>
+                
                 <Button onClick={() => setVerMaisModalOpen(false)} variant="outline" className="flex-1">
                   Fechar
                 </Button>
