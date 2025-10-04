@@ -1,103 +1,195 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useEffect, useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { mockSalesData } from './storehistoryc/page'
+
+type SalesData = {
+  label: string
+  revenue: number
+  profit: number
+}
+
+export default function Dashboard() {
+  const [data, setData] = useState<SalesData[]>([])
+  const [period, setPeriod] = useState<"week" | "month">("month")
+
+  useEffect(() => {
+    if (!mockSalesData.length) return
+
+    const aggregated: Record<string, { revenue: number; profit: number }> = {}
+
+    mockSalesData.forEach((sale) => {
+      const dateObj = new Date(sale.date)
+      let label = ""
+
+      if (period === "month") {
+        label = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1)
+          .toString()
+          .padStart(2, "0")}`
+      } else {
+        const weekStart = new Date(dateObj)
+        weekStart.setDate(dateObj.getDate() - dateObj.getDay())
+        label = weekStart.toISOString().split("T")[0]
+      }
+
+      if (!aggregated[label]) aggregated[label] = { revenue: 0, profit: 0 }
+      aggregated[label].revenue += sale.value
+      aggregated[label].profit += sale.downPayment
+    })
+
+    const formatted: SalesData[] = Object.entries(aggregated)
+      .map(([label, values]) => ({
+        label,
+        revenue: values.revenue,
+        profit: values.profit,
+      }))
+      .sort((a, b) => (a.label > b.label ? 1 : -1))
+
+    setData(formatted)
+  }, [period])
+
+  const totalRevenue = mockSalesData.reduce((sum, s) => sum + s.value, 0)
+  const totalProfit = mockSalesData.reduce((sum, s) => sum + s.downPayment, 0)
+  const totalSales = mockSalesData.length
+  const avgTicket = totalSales ? totalRevenue / totalSales : 0
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="p-6 space-y-6">
+      <h2 className="text-2xl font-bold">Dashboard Financeiro</h2>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Faturamento Total</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">
+              {new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+              }).format(totalRevenue)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Lucro Líquido</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-green-600">
+              {new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+              }).format(totalProfit)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Ticket Médio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">
+              {new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+              }).format(avgTicket)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total de Vendas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{totalSales}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          className={`px-3 py-1 rounded ${period === "week" ? "bg-orange-600 text-white" : "bg-muted"}`}
+          onClick={() => setPeriod("week")}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          Semana  
+        </button>
+        <button
+          className={`px-3 py-1 rounded ${period === "month" ? "bg-orange-600 text-white" : "bg-muted"}`}
+          onClick={() => setPeriod("month")}
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          Mês
+        </button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Evolução {period === "month" ? "Mensal" : "Semanal"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid stroke="#ccc" strokeDasharray="5 5" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip formatter={(value: number) => {
+                  return new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL'
+                  }).format(value)
+                }} />
+                <Line type="monotone" dataKey="revenue" stroke="#ea580c" name="Faturamento" />
+                <Line type="monotone" dataKey="profit" stroke="#16a34a" name="Lucro Líquido" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Últimas Vendas de Motos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b">
+                  <th className="p-2">Data</th>
+                  <th className="p-2">Modelo</th>
+                  <th className="p-2">Cliente</th>
+                  <th className="p-2">Valor</th>
+                  <th className="p-2">Entrada</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mockSalesData.slice(-10).reverse().map((sale) => (
+                  <tr key={sale.id} className="border-b">
+                    <td className="p-2">{new Date(sale.date).toLocaleDateString('pt-BR')}</td>
+                    <td className="p-2">{sale.model}</td>
+                    <td className="p-2">{sale.clientName}</td>
+                    <td className="p-2">
+                      {new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      }).format(sale.value)}
+                    </td>
+                    <td className="p-2 text-green-600">
+                      {new Intl.NumberFormat('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL'
+                      }).format(sale.downPayment)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
-  );
+  )
 }
