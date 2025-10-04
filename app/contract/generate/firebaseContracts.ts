@@ -1,21 +1,19 @@
-import { doc, getDoc } from "firebase/firestore"
-import { db } from "@/firebase/config"
-import { saveAs } from "file-saver"
-import htmlDocx from "html-docx-js/dist/html-docx"
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/firebase/config";
+import { saveAs } from "file-saver";
+import HtmlDocx from "html-docx-js-typescript";
 
 export async function gerarContratoFirebase(venda: any, tipoContrato: string) {
   try {
-    const docRef = doc(db, "contracts", "modeloBase")
-    const snap = await getDoc(docRef)
+    const docRef = doc(db, "contracts", "modeloBase");
+    const snap = await getDoc(docRef);
 
-    if (!snap.exists()) throw new Error("Documento modeloBase não encontrado.")
+    if (!snap.exists()) throw new Error("Documento modeloBase não encontrado.");
 
-    const data = snap.data()
-    const modelo = data[tipoContrato]
+    const data = snap.data();
+    const modelo = data[tipoContrato];
+    if (!modelo) throw new Error(`Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`);
 
-    if (!modelo) throw new Error(`Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`)
-
-    // 🕓 Data atual formatada (com hora)
     const dataHoraEmissao = new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
       day: "2-digit",
@@ -23,34 +21,58 @@ export async function gerarContratoFirebase(venda: any, tipoContrato: string) {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-    })
+    });
 
-    // 🔤 Corrige encoding (garante UTF-8)
-    const modeloUtf8 = new TextDecoder("utf-8").decode(new TextEncoder().encode(modelo))
+    const dataVendaPorExtenso = new Date().toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
 
-    // ✍️ Substitui os campos dinâmicos
-    const htmlPreenchido = preencherCampos(modeloUtf8, venda, dataHoraEmissao)
+    const vendedorDefault = {
+      vendedorResponsavel: "IRAN DE SOUZA",
+      vendedorCpf: "15.536.385/0001-83",
+    };
 
-    // 🧾 Gera o DOCX
-    const converted = htmlDocx.asBlob(htmlPreenchido)
-    saveAs(converted, `${tipoContrato}_${venda.clienteNome}.docx`)
+    const htmlPreenchido = preencherCampos(modelo, {
+      ...vendedorDefault,
+      ...venda, // sobrescreve se vier do Firestore
+      dataHoraEmissao,
+      dataVendaPorExtenso,
+      cidadeUpper: venda.cidade?.toUpperCase() || "",
+    });
+
+    // Gera DOCX
+    const result = await HtmlDocx.asBlob(htmlPreenchido, { orientation: "portrait" });
+
+    const blob =
+      result instanceof Blob
+        ? result
+        : new Blob([Uint8Array.from(result as any)], {
+            type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          });
+
+    saveAs(blob, `${tipoContrato}_${venda.clienteNome}.docx`);
   } catch (err) {
-    console.error(err)
-    alert("Erro ao gerar contrato: " + err)
+    console.error(err);
+    alert("Erro ao gerar contrato: " + err);
   }
 }
 
-function preencherCampos(texto: string, venda: any, dataVendaGerada: string) {
-  if (typeof texto !== "string") return ""
+function preencherCampos(modelo: string, venda: any) {
+  if (typeof modelo !== "string") return "";
 
-  return texto
+  return modelo
     .replace(/{{id}}/g, venda.id || "")
     .replace(/{{vendedorResponsavel}}/g, venda.vendedorResponsavel || "")
+    .replace(/{{vendedorCpf}}/g, venda.vendedorCpf || "")
     .replace(/{{clienteNome}}/g, venda.clienteNome || "")
     .replace(/{{cpf}}/g, venda.cpf || "")
     .replace(/{{endereco}}/g, venda.endereco || "")
+    .replace(/{{bairro}}/g, venda.bairro || "")
     .replace(/{{cidade}}/g, venda.cidade || "")
     .replace(/{{estado}}/g, venda.estado || "")
+    .replace(/{{cidadeUpper}}/g, venda.cidadeUpper || "")
     .replace(/{{marca}}/g, venda.marca || "")
     .replace(/{{modelo}}/g, venda.modelo || "")
     .replace(/{{ano}}/g, venda.ano || "")
@@ -61,5 +83,10 @@ function preencherCampos(texto: string, venda: any, dataVendaGerada: string) {
     .replace(/{{km}}/g, venda.km || "")
     .replace(/{{valorVenda}}/g, venda.valorVenda?.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) || "")
     .replace(/{{entrada}}/g, venda.entrada || "")
-    .replace(/{{dataHoraEmissao}}/g, dataVendaGerada || "")
+    .replace(/{{entradaExtenso}}/g, venda.entradaExtenso || "")
+    .replace(/{{valorParcela}}/g, venda.valorParcela || "")
+    .replace(/{{valorParcelaExtenso}}/g, venda.valorParcelaExtenso || "")
+    .replace(/{{parcelas}}/g, venda.parcelas || "")
+    .replace(/{{dataHoraEmissao}}/g, venda.dataHoraEmissao || "")
+    .replace(/{{dataVendaPorExtenso}}/g, venda.dataVendaPorExtenso || "");
 }

@@ -7,15 +7,15 @@ import { db } from "@/firebase/config"
 import { toast } from "sonner"
 
 type ContractKeys =
-  | "termoGarantia"
+  | "termoEntrega"
   | "termoContrato"
   | "reservaDominio"
   | "instrumentoLiberacao"
   | "vendaRepasse"
 
 const defaultContracts: Record<ContractKeys, string> = {
-  termoGarantia: "Modelo base - Termo de Garantia",
-  termoContrato: "Modelo base - Contrato de Compra e Venda",
+  termoEntrega: "Modelo base - Contrato",
+  termoContrato: "Modelo base - Termo de Entrega",
   reservaDominio: "Modelo base - Reserva de Domínio",
   instrumentoLiberacao: "Modelo base - Instrumento de Liberação",
   vendaRepasse: "Modelo base - Venda de Veículo de Repasse",
@@ -23,7 +23,7 @@ const defaultContracts: Record<ContractKeys, string> = {
 
 export default function ContractPage() {
   const [contracts, setContracts] = useState<Record<ContractKeys, string>>(defaultContracts)
-  const [selectedContract, setSelectedContract] = useState<ContractKeys>("termoGarantia")
+  const [selectedContract, setSelectedContract] = useState<ContractKeys>("termoEntrega")
   const [isEditing, setIsEditing] = useState(false)
 
   // 🔥 Carrega modeloBase do Firestore
@@ -73,7 +73,7 @@ export default function ContractPage() {
   }
 
   const labelMap: Record<ContractKeys, string> = {
-    termoGarantia: "Termo de Garantia / Entrega",
+    termoEntrega: "Termo de Garantia / Entrega",
     termoContrato: "Contrato de Compra e Venda Loja",
     reservaDominio: "Reserva de Domínio",
     instrumentoLiberacao: "Instrumento de Liberação",

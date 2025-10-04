@@ -94,6 +94,14 @@ export default function HistoricoVendas() {
                 >
                   Instrumento de Liberação
                 </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () =>
+                    await gerarContratoFirebase(venda, "termoEntrega")
+                  }
+                >
+                  Termo de Entrega
+                </Button>
 
                 <Button
                   variant="outline"
@@ -107,7 +115,7 @@ export default function HistoricoVendas() {
                 <Button
                   variant="outline"
                   onClick={async () =>
-                    await gerarContratoFirebase(venda, "contratoLoja")
+                    await gerarContratoFirebase(venda, "termoContrato")
                   }
                 >
                   Contrato Loja
