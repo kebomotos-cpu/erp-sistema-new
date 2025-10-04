@@ -26,12 +26,12 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
-  { name: "Cadastro de Cliente", href: "/analytics", icon: BarChart2 },
+  { name: "Cadastro de Cliente", href: "/client-register", icon: BarChart2 },
   { name: "Estoque", href: "/stock", icon: Building2 },
   { name: "Contratos /Edição", href: "/contract", icon: Folder },
   { name: "Despesas Gerais", href: "/transactions", icon: Wallet },
   { name: "Histórico de Vendas", href: "/storehistoryc", icon: Receipt },
-  { name: "Histórico de Contratos", href: "/contract", icon: CreditCard },
+  // { name: "Histórico de Contratos", href: "/contract", icon: CreditCard },
   
 ]
 

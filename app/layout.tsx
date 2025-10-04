@@ -13,8 +13,8 @@ import { Toaster } from "@/components/ui/sonner";
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata = {
-  title: "Flowers&Saints - Painel",
-  description: "Um painel financeiro moderno e responsivo",
+  title: "Kebo Motos - Painel",
+  description: "Um painel de administração",
 }
 
 export default function RootLayout({
@@ -34,7 +34,7 @@ export default function RootLayout({
                   <TopNav />
                   <div className="container mx-auto p-6 max-w-7xl">
                     <main className="w-full">{children}</main>
-                            <Toaster />
+                            <Toaster position="top-right"/>
                   </div>
                 </div>
               </div>

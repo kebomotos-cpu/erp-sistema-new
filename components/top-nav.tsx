@@ -1,6 +1,5 @@
 "use client"
 import { ThemeToggle } from "./theme-toggle"
-import { Notifications } from "./notifications"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSettings } from "@/contexts/settings-context"
@@ -40,7 +39,7 @@ export function TopNav() {
           </nav>
         </div>
         <div className="flex items-center gap-4">
-          <Notifications />
+         
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
