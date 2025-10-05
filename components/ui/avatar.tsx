@@ -13,11 +13,7 @@ const Avatar = React.forwardRef<
     ref={ref}
     data-slot="avatar"
     suppressHydrationWarning
-    className={cn(
-      // ⚠️ sem "size-8" para evitar conflito/ordem diferente no SSR
-      "relative flex overflow-hidden h-20 w-20 rounded-lg",
-      className
-    )}
+    className={cn("relative flex overflow-hidden h-20 w-20 rounded-lg", className)}
     {...props}
   />
 ))
@@ -37,7 +33,7 @@ const AvatarImage = React.forwardRef<
 ))
 AvatarImage.displayName = "AvatarImage"
 
-// Fallback (sem mismatch)
+// Fallback (sem mismatch + sem atraso)
 const AvatarFallback = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Fallback>,
   React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>
@@ -49,6 +45,7 @@ const AvatarFallback = React.forwardRef<
     <AvatarPrimitive.Fallback
       ref={ref}
       data-slot="avatar-fallback"
+      delayMs={0}
       suppressHydrationWarning
       className={cn(
         "bg-muted text-foreground/70 flex h-full w-full items-center justify-center rounded-lg text-sm font-medium uppercase",
@@ -56,7 +53,6 @@ const AvatarFallback = React.forwardRef<
       )}
       {...props}
     >
-      {/* Render estável no SSR: espaço fino; client injeta iniciais depois */}
       {mounted ? children : "\u2009"}
     </AvatarPrimitive.Fallback>
   )

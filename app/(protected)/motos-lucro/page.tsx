@@ -291,8 +291,8 @@ export default function FinanceiroPorMotoPage() {
   };
 
   return (
-    <RequireAuth roles={["dono"]}>
-    <div className="p-8">
+        <RequireAuth roles={["dono"]}>
+      <div className="p-0">{/* NÃO renderize outro sidebar aqui */}
       {/* DASHBOARD */}
       <h1 className="text-3xl font-bold mb-6">Financeiro por Moto</h1>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

@@ -111,7 +111,7 @@ export function Sidebar() {
           )}
         >
           {/* Header */}
-          <div className="border-b border-border">
+          <div className="border-b border-border ">
             <div
               className={cn(
                 "flex h-16 items-center gap-2 px-4",

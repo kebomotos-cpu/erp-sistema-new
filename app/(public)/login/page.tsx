@@ -15,13 +15,13 @@ export default function LoginPage() {
   const { user } = useAuth();
   const router = useRouter();
 
-  useEffect(() => { if (user) router.replace("/dashboard"); }, [user, router]);
+  useEffect(() => { if (user) router.replace("/"); }, [user, router]);
 
   const doLogin = async () => {
     try {
       setLoading(true);
       await signInWithEmailAndPassword(auth, email.trim(), senha);
-      router.replace("/dashboard");
+      router.replace("/");
     } catch (e) {
       toast.error("Credenciais inválidas.");
     } finally { setLoading(false); }

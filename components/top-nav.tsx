@@ -1,7 +1,9 @@
 "use client"
-import { ThemeToggle } from "./theme-toggle"
+
+import React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { ThemeToggle } from "./theme-toggle"
 import { useSettings } from "@/contexts/settings-context"
 import {
   DropdownMenu,
@@ -11,14 +13,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import React from "react"
+import { useAuth } from "@/app/providers/auth-provider"
+import { toast } from "sonner"
+import { LogIn } from "lucide-react" // ⬅️ ícone de login
 
 export function TopNav() {
   const pathname = usePathname()
+  const router = useRouter()
   const pathSegments = pathname.split("/").filter(Boolean)
   const { settings } = useSettings()
+  const { logout } = useAuth()
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+      const next = encodeURIComponent(pathname || "/")
+      router.replace(`/login?next=${next}`)
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível sair. Tente novamente.")
+    }
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background">
@@ -29,47 +45,60 @@ export function TopNav() {
               Home
             </Link>
             {pathSegments.map((segment, index) => (
-              <React.Fragment key={segment}>
+              <React.Fragment key={`${segment}-${index}`}>
                 <span className="text-muted-foreground">/</span>
-                <Link href={`/${pathSegments.slice(0, index + 1).join("/")}`} className="text-sm font-medium">
+                <Link
+                  href={`/${pathSegments.slice(0, index + 1).join("/")}`}
+                  className="text-sm font-medium"
+                >
                   {segment.charAt(0).toUpperCase() + segment.slice(1)}
                 </Link>
               </React.Fragment>
             ))}
           </nav>
         </div>
+
         <div className="flex items-center gap-4">
-         
           <ThemeToggle />
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={settings.avatar} alt={settings.fullName} />
-                  <AvatarFallback>
-                    {settings.fullName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")}
-                  </AvatarFallback>
-                </Avatar>
+              <Button
+                variant="ghost"
+                className="relative h-8 w-8 rounded-full p-0"
+                aria-label="Menu do usuário"
+              >
+                <LogIn className="h-5 w-5" />
               </Button>
             </DropdownMenuTrigger>
+
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{settings.fullName}</p>
-                  <p className="text-xs leading-none text-muted-foreground">{settings.email}</p>
+                  <p className="text-sm font-medium leading-none">
+                    {settings?.fullName || "Usuário"}
+                  </p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {settings?.email || ""}
+                  </p>
                 </div>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/settings">Profile</Link>
+              {/* <DropdownMenuSeparator /> */}
+              {/* <DropdownMenuItem asChild>
+                <Link href="/settings">Perfil</Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/settings">Settings</Link>
+                <Link href="/settings">Configurações</Link>
+              </DropdownMenuItem> */}
+              {/* <DropdownMenuSeparator /> */}
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault()
+                  handleLogout()
+                }}
+              >
+                Sair
               </DropdownMenuItem>
-              <DropdownMenuItem>Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
