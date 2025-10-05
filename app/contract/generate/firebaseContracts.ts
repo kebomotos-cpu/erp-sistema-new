@@ -1,3 +1,4 @@
+// app/contract/generate/firebaseContracts.ts
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { saveAs } from "file-saver";
@@ -34,6 +35,9 @@ type Venda = {
 
 type ContractModels = Record<string, string>; // { [tipoContrato]: html }
 
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
 export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) {
   try {
     const docRef = doc(db, "contracts", "modeloBase");
@@ -43,7 +47,10 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
 
     const data = snap.data() as ContractModels;
     const modelo = data[tipoContrato];
-    if (!modelo) throw new Error(`Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`);
+    if (!modelo)
+      throw new Error(
+        `Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`
+      );
 
     const dataHoraEmissao = new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
@@ -60,7 +67,9 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
       year: "numeric",
     });
 
-    const vendedorDefault: Required<Pick<Venda, "vendedorResponsavel" | "vendedorCpf">> = {
+    const vendedorDefault: Required<
+      Pick<Venda, "vendedorResponsavel" | "vendedorCpf">
+    > = {
       vendedorResponsavel: "IRAN DE SOUZA",
       vendedorCpf: "15.536.385/0001-83",
     };
@@ -73,12 +82,15 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
       cidadeUpper: venda.cidade?.toUpperCase() || "",
     });
 
-    const result = await HtmlDocx.asBlob(htmlPreenchido, { orientation: "portrait" });
-    const blob = result instanceof Blob
-      ? result
-      : new Blob([Uint8Array.from(result as ArrayLike<number>)], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
+    // A lib pode retornar um Blob ou um buffer-like. Normalizamos para Blob sem usar `any`.
+    const maybeBlob = await HtmlDocx.asBlob(htmlPreenchido, {
+      orientation: "portrait",
+    });
+
+    const blob: Blob =
+      maybeBlob instanceof Blob
+        ? maybeBlob
+        : new Blob([maybeBlob as BlobPart], { type: DOCX_MIME });
 
     saveAs(blob, `${tipoContrato}_${venda.clienteNome ?? "cliente"}.docx`);
   } catch (err) {
@@ -89,6 +101,7 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
 
 function preencherCampos(modelo: string, venda: Venda) {
   if (typeof modelo !== "string") return "";
+
   return modelo
     .replace(/{{id}}/g, venda.id || "")
     .replace(/{{vendedorResponsavel}}/g, venda.vendedorResponsavel || "")
@@ -108,7 +121,12 @@ function preencherCampos(modelo: string, venda: Venda) {
     .replace(/{{renavam}}/g, venda.renavam || "")
     .replace(/{{chassi}}/g, venda.chassi || "")
     .replace(/{{km}}/g, String(venda.km ?? ""))
-    .replace(/{{valorVenda}}/g, (venda.valorVenda ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }))
+    .replace(
+      /{{valorVenda}}/g,
+      (venda.valorVenda ?? 0).toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+      })
+    )
     .replace(/{{entrada}}/g, venda.entrada || "")
     .replace(/{{entradaExtenso}}/g, venda.entradaExtenso || "")
     .replace(/{{valorParcela}}/g, venda.valorParcela || "")

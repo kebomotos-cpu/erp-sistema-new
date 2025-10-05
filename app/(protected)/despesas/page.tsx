@@ -8,6 +8,7 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  Timestamp,
 } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { toast } from "sonner";
@@ -61,6 +62,18 @@ type Moto = {
   imageUrl?: string;
 };
 
+type MotoFS = {
+  marca?: string;
+  modelo?: string;
+  placa?: string;
+  placaFinal?: string;
+  chassi?: string;
+  Chassi?: string;
+  imageUrl?: string;
+  fotoPrincipal?: string;
+  fotos?: string[];
+};
+
 type Despesa = {
   id: string;
   descricao: string;
@@ -68,27 +81,24 @@ type Despesa = {
   data: string; // ISO yyyy-mm-dd
   categoria?: string;
   obs?: string;
-  createdAt?: any;
-
-  motoId?: string;
+  createdAt?: Timestamp | null;
+  motoId?: string | null;
   moto?: {
     modelo?: string;
-    placa?: string;
-    chassi?: string;
-  };
+    placa?: string | null;
+    chassi?: string | null;
+  } | null;
 };
+
+type DespesaFS = Omit<Despesa, "id">;
 
 // ---------- Utils ----------
 const BRL = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const fmtDate = (iso: string) => {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString("pt-BR");
-  } catch {
-    return iso;
-  }
+  const d = new Date(iso);
+  return isNaN(+d) ? iso : d.toLocaleDateString("pt-BR");
 };
 
 // agrupa yyyy-mm → soma
@@ -108,11 +118,8 @@ const groupMonthly = (list: Despesa[]) => {
 function filterByRange(list: Despesa[], mode: "week" | "month") {
   const now = new Date();
   const start = new Date(now);
-  if (mode === "week") {
-    start.setDate(now.getDate() - 6);
-  } else {
-    start.setDate(1);
-  }
+  if (mode === "week") start.setDate(now.getDate() - 6);
+  else start.setDate(1);
   start.setHours(0, 0, 0, 0);
 
   return list.filter((d) => {
@@ -149,24 +156,41 @@ export default function DespesasGerais() {
   useEffect(() => {
     (async () => {
       try {
+        // despesas
         const qDesp = query(collection(db, "despesas"), orderBy("data", "desc"));
         const snap = await getDocs(qDesp);
-        const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Despesa[];
+        const list: Despesa[] = snap.docs.map((d) => {
+          const x = d.data() as DespesaFS;
+          return {
+            id: d.id,
+            descricao: x.descricao,
+            valor: Number(x.valor ?? 0),
+            data: x.data,
+            categoria: x.categoria ?? "",
+            obs: x.obs ?? "",
+            createdAt: x.createdAt ?? null,
+            motoId: x.motoId ?? null,
+            moto: x.moto ?? null,
+          };
+        });
         setDespesas(list);
 
+        // motos
         const mSnap = await getDocs(collection(db, "motos"));
-        const motosList = mSnap.docs.map((d) => ({
-          id: d.id,
-          marca: (d.data() as any).marca,
-          modelo: (d.data() as any).modelo,
-          placa: (d.data() as any).placa || (d.data() as any).placaFinal,
-          chassi: (d.data() as any).chassi || (d.data() as any).Chassi,
-          imageUrl:
-            (d.data() as any).imageUrl ||
-            (d.data() as any).fotoPrincipal ||
-            (Array.isArray((d.data() as any).fotos) && (d.data() as any).fotos[0]) ||
-            undefined,
-        })) as Moto[];
+        const motosList: Moto[] = mSnap.docs.map((d) => {
+          const x = d.data() as MotoFS;
+          return {
+            id: d.id,
+            marca: x.marca,
+            modelo: x.modelo,
+            placa: x.placa ?? x.placaFinal,
+            chassi: x.chassi ?? x.Chassi,
+            imageUrl:
+              x.imageUrl ??
+              x.fotoPrincipal ??
+              (Array.isArray(x.fotos) ? x.fotos[0] : undefined),
+          };
+        });
         setMotos(motosList);
       } catch (e) {
         console.error(e);
@@ -208,14 +232,14 @@ export default function DespesasGerais() {
         return;
       }
 
-      let motoPayload: Despesa["moto"] | undefined = undefined;
+      let motoPayload: Despesa["moto"] = null;
       if (form.motoId) {
         const m = motos.find((x) => x.id === form.motoId);
         if (m) {
           motoPayload = {
             modelo: [m.marca, m.modelo].filter(Boolean).join(" "),
-            placa: m.placa,
-            chassi: m.chassi,
+            placa: m.placa ?? null,
+            chassi: m.chassi ?? null,
           };
         }
       }
@@ -228,7 +252,7 @@ export default function DespesasGerais() {
         obs: form.obs || null,
         createdAt: serverTimestamp(),
         motoId: form.motoId ?? null,
-        moto: motoPayload ?? null,
+        moto: motoPayload,
       });
 
       // otimista
@@ -240,7 +264,8 @@ export default function DespesasGerais() {
           data: form.data,
           categoria: form.categoria || "",
           obs: form.obs || "",
-          motoId: form.motoId,
+          createdAt: null,
+          motoId: form.motoId ?? null,
           moto: motoPayload,
         },
         ...prev,
@@ -411,7 +436,7 @@ export default function DespesasGerais() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip formatter={(v: any) => BRL(Number(v))} />
+              <Tooltip formatter={(v: number | string) => BRL(Number(v))} />
               <Line
                 type="monotone"
                 dataKey="total"
@@ -424,7 +449,7 @@ export default function DespesasGerais() {
         </div>
       </Card>
 
-      {/* Filtros de busca */}
+      {/* Busca */}
       <div className="mt-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Input
