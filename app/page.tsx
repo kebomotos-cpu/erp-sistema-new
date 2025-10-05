@@ -6,7 +6,10 @@ import {
   LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { db } from "@/firebase/config";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import {
+  collection, onSnapshot, orderBy, query,
+  type Timestamp, type CollectionReference
+} from "firebase/firestore";
 
 type Sale = {
   id: string;
@@ -15,6 +18,15 @@ type Sale = {
   clientName: string;
   value: number;        // valorVenda
   downPayment?: number; // entrada
+};
+
+// Tipagem do documento bruto no Firestore
+type FirestoreSaleDoc = {
+  dataVenda?: Timestamp | string | null;
+  modelo?: string | null;
+  clienteNome?: string | null;
+  valorVenda?: number | string | null;
+  entrada?: number | string | null;
 };
 
 type SalesPoint = { label: string; revenue: number };
@@ -28,33 +40,40 @@ const toNumber = (v: unknown): number => {
   return 0;
 };
 
+const toIsoDate = (v: FirestoreSaleDoc["dataVenda"]): string => {
+  if (!v) return "";
+  if (typeof v === "string") return v.slice(0, 10);
+  const d: Date | undefined = typeof v.toDate === "function" ? v.toDate() : undefined;
+  return d ? d.toISOString().slice(0, 10) : "";
+};
+
 export default function Dashboard() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"week" | "month">("month");
 
   useEffect(() => {
-    // Firestore em tempo real
-    const q = query(collection(db, "storehistoryc"), orderBy("dataVenda", "asc"));
+    // Coleção tipada elimina o any no d.data()
+    const col = collection(db, "storehistoryc") as CollectionReference<FirestoreSaleDoc>;
+    const q = query(col, orderBy("dataVenda", "asc"));
+
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows: Sale[] = snap.docs.map((d) => {
-          const s = d.data() as any;
-          const rawDate: string =
-            typeof s.dataVenda === "string"
-              ? s.dataVenda
-              : s.dataVenda?.toDate?.()?.toISOString()?.slice(0, 10) ?? "";
-
-        return {
-            id: d.id,
-            date: rawDate,                               // ex: "2025-10-04"
-            model: String(s.modelo ?? ""),
-            clientName: String(s.clienteNome ?? ""),
-            value: toNumber(s.valorVenda),               // ex: 27340
-            downPayment: toNumber(s.entrada),            // pode vir vazio -> 0
-          };
-        }).filter((r) => r.date && r.model && r.clientName);
+        const rows: Sale[] = snap.docs
+          .map((d) => {
+            const s = d.data(); // já é FirestoreSaleDoc
+            const rawDate = toIsoDate(s.dataVenda);
+            return {
+              id: d.id,
+              date: rawDate,                               // "2025-10-04"
+              model: String(s.modelo ?? ""),
+              clientName: String(s.clienteNome ?? ""),
+              value: toNumber(s.valorVenda),               // 27340
+              downPayment: toNumber(s.entrada),            // vazio -> 0
+            };
+          })
+          .filter((r) => r.date && r.model && r.clientName);
 
         setSales(rows);
         setLoading(false);
@@ -106,7 +125,6 @@ export default function Dashboard() {
           <CardHeader><CardTitle>Total de Vendas</CardTitle></CardHeader>
           <CardContent><p className="text-2xl font-bold">{totalSales}</p></CardContent>
         </Card>
-        {/* Removidos: Lucro Líquido e Ticket Médio */}
       </div>
 
       <div className="flex gap-2">
