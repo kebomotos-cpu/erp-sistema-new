@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { RequireAuth } from "@/components/guards/require-auth";
 import {
   collection,
   getDocs,
@@ -290,6 +291,7 @@ export default function FinanceiroPorMotoPage() {
   };
 
   return (
+    <RequireAuth roles={["dono"]}>
     <div className="p-8">
       {/* DASHBOARD */}
       <h1 className="text-3xl font-bold mb-6">Financeiro por Moto</h1>
@@ -553,5 +555,6 @@ export default function FinanceiroPorMotoPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </RequireAuth>
   );
 }

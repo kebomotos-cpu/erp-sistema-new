@@ -7,6 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SettingsProvider } from "@/contexts/settings-context"
 import type React from "react"
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/app/providers/auth-provider";
+
 
 
 
@@ -25,6 +27,7 @@ export default function RootLayout({
   return (
   <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
+        <AuthProvider>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <SettingsProvider>
             <TooltipProvider delayDuration={0}>
@@ -41,6 +44,7 @@ export default function RootLayout({
             </TooltipProvider>
           </SettingsProvider>
         </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   )
