@@ -11,6 +11,7 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  DocumentData,
 } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { toast } from "sonner";
@@ -25,7 +26,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 
@@ -49,14 +49,30 @@ type Moto = {
   chassi?: string;
   imageUrl?: string;
   cadastradoPor?: string;
-
-  // preço de venda (qualquer um dos campos abaixo que existir)
   valorVenda?: number;
   precoVenda?: number;
   valor?: number;
+  custoFornecedor?: number;
+};
 
-  // novo/atualizável
-  custoFornecedor?: number; // quanto pagou na moto
+type MotoFS = {
+  marca?: string;
+  modelo?: string;
+  ano?: string | number;
+  Ano?: string | number;
+  placa?: string;
+  placaFinal?: string;
+  chassi?: string;
+  Chassi?: string;
+  imageUrl?: string;
+  fotoPrincipal?: string;
+  fotos?: string[];
+  cadastradoPor?: string;
+  CadastradoPor?: string;
+  valorVenda?: number;
+  precoVenda?: number;
+  valor?: number;
+  custoFornecedor?: number;
 };
 
 type Despesa = {
@@ -68,6 +84,8 @@ type Despesa = {
   obs?: string;
   motoId?: string | null;
 };
+
+type DespesaFS = Omit<Despesa, "id"> & { createdAt?: unknown; moto?: { modelo?: string; placa?: string | null; chassi?: string | null } };
 
 // ---------------- Utils ----------------
 const BRL = (n: number) =>
@@ -86,7 +104,6 @@ export default function FinanceiroPorMotoPage() {
   const [motos, setMotos] = useState<Moto[]>([]);
   const [despesas, setDespesas] = useState<Despesa[]>([]);
 
-  // modais e forms
   const [openCusto, setOpenCusto] = useState<null | Moto>(null);
   const [custoStr, setCustoStr] = useState("");
   const [openDespesa, setOpenDespesa] = useState<null | Moto>(null);
@@ -98,26 +115,22 @@ export default function FinanceiroPorMotoPage() {
     obs: "",
   });
 
-  // fetch
   useEffect(() => {
     (async () => {
       try {
         // Motos
         const mSnap = await getDocs(collection(db, "motos"));
         const mList: Moto[] = mSnap.docs.map((d) => {
-          const x = d.data() as any;
+          const x = d.data() as MotoFS;
           return {
             id: d.id,
             marca: x.marca,
             modelo: x.modelo,
-            ano: x.ano || x.Ano,
-            placa: x.placa || x.placaFinal,
-            chassi: x.chassi || x.Chassi,
-            imageUrl:
-              x.imageUrl ||
-              x.fotoPrincipal ||
-              (Array.isArray(x.fotos) ? x.fotos[0] : undefined),
-            cadastradoPor: x.cadastradoPor || x.CadastradoPor || "—",
+            ano: x.ano ?? x.Ano,
+            placa: x.placa ?? x.placaFinal,
+            chassi: x.chassi ?? x.Chassi,
+            imageUrl: x.imageUrl ?? x.fotoPrincipal ?? (Array.isArray(x.fotos) ? x.fotos[0] : undefined),
+            cadastradoPor: x.cadastradoPor ?? x.CadastradoPor ?? "—",
             valorVenda: x.valorVenda ?? x.precoVenda ?? x.valor ?? 0,
             precoVenda: x.precoVenda,
             valor: x.valor,
@@ -127,15 +140,20 @@ export default function FinanceiroPorMotoPage() {
         setMotos(mList);
 
         // Despesas
-        const qDesp = query(
-          collection(db, "despesas"),
-          orderBy("data", "desc")
-        );
+        const qDesp = query(collection(db, "despesas"), orderBy("data", "desc"));
         const dSnap = await getDocs(qDesp);
-        const dList: Despesa[] = dSnap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        }));
+        const dList: Despesa[] = dSnap.docs.map((d) => {
+          const raw = d.data() as DespesaFS;
+          return {
+            id: d.id,
+            descricao: raw.descricao,
+            valor: Number(raw.valor ?? 0),
+            data: raw.data,
+            categoria: raw.categoria ?? "",
+            obs: raw.obs ?? "",
+            motoId: raw.motoId ?? null,
+          };
+        });
         setDespesas(dList);
       } catch (e) {
         console.error(e);
@@ -144,7 +162,6 @@ export default function FinanceiroPorMotoPage() {
     })();
   }, []);
 
-  // ----- Derivados: despesas por moto -----
   const despesasPorMoto = useMemo(() => {
     const map = new Map<string, number>();
     despesas.forEach((d) => {
@@ -155,18 +172,12 @@ export default function FinanceiroPorMotoPage() {
     return map;
   }, [despesas]);
 
-  // ----- cards do dashboard -----
   const totalVenda = useMemo(
-    () =>
-      motos.reduce(
-        (acc, m) => acc + (m.valorVenda ?? m.precoVenda ?? m.valor ?? 0),
-        0
-      ),
+    () => motos.reduce((acc, m) => acc + (m.valorVenda ?? m.precoVenda ?? m.valor ?? 0), 0),
     [motos]
   );
   const totalDespesas = useMemo(
-    () =>
-      Array.from(despesasPorMoto.values()).reduce((a, b) => a + b, 0),
+    () => Array.from(despesasPorMoto.values()).reduce((a, b) => a + b, 0),
     [despesasPorMoto]
   );
   const totalCustos = useMemo(
@@ -175,17 +186,11 @@ export default function FinanceiroPorMotoPage() {
   );
   const lucroLiquidoGeral = totalVenda - totalDespesas - totalCustos;
 
-  // gráfico simples por mês (lucro = venda - despesas - custos; custos não tem data → rateio simples por moto no mês de maior parte das despesas; para evitar ficção, aqui plotamos apenas Receita e Despesa)
   const chartData = useMemo(() => {
     const receitaPorMes = new Map<string, number>();
     const despPorMes = new Map<string, number>();
-
-    // Receita: sem data na moto. Para dar noção, concentramos a receita no mês corrente (ou adapte se você salvar data da venda).
     const nowKey = new Date().toISOString().slice(0, 7);
-    receitaPorMes.set(
-      nowKey,
-      (receitaPorMes.get(nowKey) || 0) + totalVenda
-    );
+    receitaPorMes.set(nowKey, (receitaPorMes.get(nowKey) || 0) + totalVenda);
 
     despesas.forEach((d) => {
       const k = monthKey(d.data);
@@ -193,10 +198,7 @@ export default function FinanceiroPorMotoPage() {
       despPorMes.set(k, (despPorMes.get(k) || 0) + (d.valor || 0));
     });
 
-    const keys = Array.from(
-      new Set([...receitaPorMes.keys(), ...despPorMes.keys()])
-    ).sort();
-
+    const keys = Array.from(new Set([...receitaPorMes.keys(), ...despPorMes.keys()])).sort();
     return keys.map((k) => ({
       month: k,
       receita: receitaPorMes.get(k) || 0,
@@ -204,13 +206,8 @@ export default function FinanceiroPorMotoPage() {
     }));
   }, [despesas, totalVenda]);
 
-  // ----- handlers -----
   const abrirModalCusto = (m: Moto) => {
-    setCustoStr(
-      (m.custoFornecedor ?? 0).toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-      })
-    );
+    setCustoStr((m.custoFornecedor ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
     setOpenCusto(m);
   };
 
@@ -218,14 +215,8 @@ export default function FinanceiroPorMotoPage() {
     if (!openCusto) return;
     try {
       const valor = parseBR(custoStr);
-      await updateDoc(fsDoc(db, "motos", openCusto.id), {
-        custoFornecedor: valor,
-      });
-      setMotos((list) =>
-        list.map((m) =>
-          m.id === openCusto.id ? { ...m, custoFornecedor: valor } : m
-        )
-      );
+      await updateDoc(fsDoc(db, "motos", openCusto.id), { custoFornecedor: valor });
+      setMotos((list) => list.map((m) => (m.id === openCusto.id ? { ...m, custoFornecedor: valor } : m)));
       setOpenCusto(null);
       toast.success("Custo do fornecedor salvo.");
     } catch (e) {
@@ -262,14 +253,11 @@ export default function FinanceiroPorMotoPage() {
         createdAt: serverTimestamp(),
         motoId: openDespesa.id,
         moto: {
-          modelo: [openDespesa.marca, openDespesa.modelo]
-            .filter(Boolean)
-            .join(" "),
+          modelo: [openDespesa.marca, openDespesa.modelo].filter(Boolean).join(" "),
           placa: openDespesa.placa ?? null,
           chassi: openDespesa.chassi ?? null,
         },
       });
-      // otimista
       setDespesas((prev) => [
         {
           id: crypto.randomUUID(),

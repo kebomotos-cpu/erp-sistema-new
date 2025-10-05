@@ -3,14 +3,45 @@ import { db } from "@/firebase/config";
 import { saveAs } from "file-saver";
 import HtmlDocx from "html-docx-js-typescript";
 
-export async function gerarContratoFirebase(venda: any, tipoContrato: string) {
+type Venda = {
+  id?: string;
+  vendedorResponsavel?: string;
+  vendedorCpf?: string;
+  clienteNome?: string;
+  cpf?: string;
+  endereco?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
+  marca?: string;
+  modelo?: string;
+  ano?: string | number;
+  cor?: string;
+  placa?: string;
+  renavam?: string;
+  chassi?: string;
+  km?: string | number;
+  valorVenda?: number;
+  entrada?: string;
+  entradaExtenso?: string;
+  valorParcela?: string;
+  valorParcelaExtenso?: string;
+  parcelas?: string;
+  dataHoraEmissao?: string;
+  dataVendaPorExtenso?: string;
+  cidadeUpper?: string;
+};
+
+type ContractModels = Record<string, string>; // { [tipoContrato]: html }
+
+export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) {
   try {
     const docRef = doc(db, "contracts", "modeloBase");
     const snap = await getDoc(docRef);
 
     if (!snap.exists()) throw new Error("Documento modeloBase não encontrado.");
 
-    const data = snap.data();
+    const data = snap.data() as ContractModels;
     const modelo = data[tipoContrato];
     if (!modelo) throw new Error(`Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`);
 
@@ -29,39 +60,35 @@ export async function gerarContratoFirebase(venda: any, tipoContrato: string) {
       year: "numeric",
     });
 
-    const vendedorDefault = {
+    const vendedorDefault: Required<Pick<Venda, "vendedorResponsavel" | "vendedorCpf">> = {
       vendedorResponsavel: "IRAN DE SOUZA",
       vendedorCpf: "15.536.385/0001-83",
     };
 
     const htmlPreenchido = preencherCampos(modelo, {
       ...vendedorDefault,
-      ...venda, // sobrescreve se vier do Firestore
+      ...venda,
       dataHoraEmissao,
       dataVendaPorExtenso,
       cidadeUpper: venda.cidade?.toUpperCase() || "",
     });
 
-    // Gera DOCX
     const result = await HtmlDocx.asBlob(htmlPreenchido, { orientation: "portrait" });
+    const blob = result instanceof Blob
+      ? result
+      : new Blob([Uint8Array.from(result as ArrayLike<number>)], {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        });
 
-    const blob =
-      result instanceof Blob
-        ? result
-        : new Blob([Uint8Array.from(result as any)], {
-            type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          });
-
-    saveAs(blob, `${tipoContrato}_${venda.clienteNome}.docx`);
+    saveAs(blob, `${tipoContrato}_${venda.clienteNome ?? "cliente"}.docx`);
   } catch (err) {
     console.error(err);
-    alert("Erro ao gerar contrato: " + err);
+    alert("Erro ao gerar contrato: " + String(err));
   }
 }
 
-function preencherCampos(modelo: string, venda: any) {
+function preencherCampos(modelo: string, venda: Venda) {
   if (typeof modelo !== "string") return "";
-
   return modelo
     .replace(/{{id}}/g, venda.id || "")
     .replace(/{{vendedorResponsavel}}/g, venda.vendedorResponsavel || "")
@@ -75,13 +102,13 @@ function preencherCampos(modelo: string, venda: any) {
     .replace(/{{cidadeUpper}}/g, venda.cidadeUpper || "")
     .replace(/{{marca}}/g, venda.marca || "")
     .replace(/{{modelo}}/g, venda.modelo || "")
-    .replace(/{{ano}}/g, venda.ano || "")
+    .replace(/{{ano}}/g, String(venda.ano ?? ""))
     .replace(/{{cor}}/g, venda.cor || "")
     .replace(/{{placa}}/g, venda.placa || "")
     .replace(/{{renavam}}/g, venda.renavam || "")
     .replace(/{{chassi}}/g, venda.chassi || "")
-    .replace(/{{km}}/g, venda.km || "")
-    .replace(/{{valorVenda}}/g, venda.valorVenda?.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) || "")
+    .replace(/{{km}}/g, String(venda.km ?? ""))
+    .replace(/{{valorVenda}}/g, (venda.valorVenda ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 }))
     .replace(/{{entrada}}/g, venda.entrada || "")
     .replace(/{{entradaExtenso}}/g, venda.entradaExtenso || "")
     .replace(/{{valorParcela}}/g, venda.valorParcela || "")

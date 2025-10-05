@@ -5,11 +5,17 @@ import { auth, db } from "@/firebase/config";
 import { doc, getDoc } from "firebase/firestore";
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Role = "dono" | "secretaria" | "vendedor";
-type AppUser = (User & { appRole?: Role }) | null;
+export type Role = "dono" | "secretaria" | "vendedor";
+export type AppUser = (User & { appRole?: Role }) | null;
 
 type Ctx = { user: AppUser; loading: boolean; logout: () => Promise<void> };
-const AuthContext = createContext<Ctx>({ user: null, loading: true, logout: async () => {} });
+const AuthContext = createContext<Ctx>({
+  user: null,
+  loading: true,
+  logout: async () => {},
+});
+
+type UserDoc = { role?: Role };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser>(null);
@@ -18,11 +24,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (!fbUser) {
-        setUser(null); setLoading(false); return;
+        setUser(null);
+        setLoading(false);
+        return;
       }
       try {
         const snap = await getDoc(doc(db, "users", fbUser.uid));
-        const role = (snap.exists() ? (snap.data() as any).role : undefined) as Role | undefined;
+        const role = (snap.exists() ? (snap.data() as UserDoc).role : undefined) as Role | undefined;
         setUser(Object.assign(fbUser, { appRole: role }));
       } catch {
         setUser(Object.assign(fbUser, { appRole: undefined }));
@@ -32,7 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, []);
 
-  const logout = async () => { await signOut(auth); };
+  const logout = async () => {
+    await signOut(auth);
+  };
 
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>

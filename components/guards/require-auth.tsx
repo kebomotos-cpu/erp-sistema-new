@@ -1,10 +1,8 @@
-// components/guards/require-auth.tsx
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/providers/auth-provider";
-
-type Role = "dono" | "secretaria" | "vendedor";
+import type { Role } from "@/app/providers/auth-provider";
 
 export function RequireAuth({
   children,
@@ -23,8 +21,8 @@ export function RequireAuth({
       router.replace(`/login?next=${next}`);
       return;
     }
-    if (roles && !roles.includes((user as any).appRole as Role)) {
-      router.replace("/"); // ou página de acesso negado
+    if (roles && !roles.includes(user.appRole as Role)) {
+      router.replace("/");
     }
   }, [user, loading, roles, router]);
 
