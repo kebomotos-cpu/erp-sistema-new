@@ -35,12 +35,12 @@ type NavItem = {
 };
 
 const BASE_NAV: NavItem[] = [
-  { name: "Dashboard", href: "/", icon: Home },
+  { name: "Dashboard", href: "/", icon: Home , roles: ["dono", "secretaria", "vendedor"]},
   { name: "Cadastro de Cliente", href: "/registro-cliente", icon: BarChart2, roles: ["dono", "secretaria", "vendedor"] },
-  { name: "Estoque", href: "/estoque", icon: Building2 },
-  { name: "Contratos /Edição", href: "/contract", icon: Folder },
+  { name: "Estoque", href: "/estoque", icon: Building2 , roles: ["dono", "secretaria", "vendedor"]},
+  { name: "Contratos /Edição", href: "/contract", icon: Folder, roles: ["dono", "secretaria", "vendedor"] },
   { name: "Despesas Gerais", href: "/despesas", icon: Wallet, roles: ["dono", "secretaria", "vendedor"] },
-  { name: "Histórico de Vendas", href: "/historico-de-vendas", icon: Receipt },
+  { name: "Histórico de Vendas", href: "/historico-de-vendas", icon: Receipt , roles: ["dono", "secretaria", "vendedor"]},
   // exclusivo do dono
   { name: "Lucro por Moto", href: "/motos-lucro", icon: BarChart2, roles: ["dono"] },
 ];
