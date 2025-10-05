@@ -1,111 +1,96 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
+import { db } from "@/firebase/config";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 
 type Sale = {
-  id: string
-  date: string
-  model: string
-  clientName: string
-  value: number
-  downPayment: number
-}
+  id: string;
+  date: string;         // YYYY-MM-DD
+  model: string;
+  clientName: string;
+  value: number;        // valorVenda
+  downPayment?: number; // entrada
+};
 
-type SalesData = {
-  label: string
-  revenue: number
-  profit: number
-}
+type SalesPoint = { label: string; revenue: number };
 
-// Mock de vendas simulando dados reais
-const mockSalesData: Sale[] = [
-  {
-    id: "1",
-    date: "2025-09-10",
-    model: "CG 160 Titan",
-    clientName: "João Silva",
-    value: 16500,
-    downPayment: 3000,
-  },
-  {
-    id: "2",
-    date: "2025-09-15",
-    model: "Biz 125 EX",
-    clientName: "Maria Oliveira",
-    value: 14800,
-    downPayment: 2500,
-  },
-  {
-    id: "3",
-    date: "2025-09-25",
-    model: "CB 300R",
-    clientName: "Pedro Souza",
-    value: 22000,
-    downPayment: 4000,
-  },
-  {
-    id: "4",
-    date: "2025-10-01",
-    model: "XRE 300 Rally",
-    clientName: "Carlos Pereira",
-    value: 28000,
-    downPayment: 5000,
-  },
-  {
-    id: "5",
-    date: "2025-10-03",
-    model: "NXR 160 Bros",
-    clientName: "Lucas Andrade",
-    value: 19500,
-    downPayment: 3500,
-  },
-]
+const money = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
+const toNumber = (v: unknown): number => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "") return Number(v.replace(/\./g, "").replace(",", "."));
+  return 0;
+};
 
 export default function Dashboard() {
-  const [data, setData] = useState<SalesData[]>([])
-  const [period, setPeriod] = useState<"week" | "month">("month")
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<"week" | "month">("month");
 
   useEffect(() => {
-    if (!mockSalesData.length) return
+    // Firestore em tempo real
+    const q = query(collection(db, "storehistoryc"), orderBy("dataVenda", "asc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows: Sale[] = snap.docs.map((d) => {
+          const s = d.data() as any;
+          const rawDate: string =
+            typeof s.dataVenda === "string"
+              ? s.dataVenda
+              : s.dataVenda?.toDate?.()?.toISOString()?.slice(0, 10) ?? "";
 
-    const aggregated: Record<string, { revenue: number; profit: number }> = {}
+        return {
+            id: d.id,
+            date: rawDate,                               // ex: "2025-10-04"
+            model: String(s.modelo ?? ""),
+            clientName: String(s.clienteNome ?? ""),
+            value: toNumber(s.valorVenda),               // ex: 27340
+            downPayment: toNumber(s.entrada),            // pode vir vazio -> 0
+          };
+        }).filter((r) => r.date && r.model && r.clientName);
 
-    mockSalesData.forEach((sale) => {
-      const dateObj = new Date(sale.date)
-      let label = ""
-
-      if (period === "month") {
-        label = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1)
-          .toString()
-          .padStart(2, "0")}`
-      } else {
-        const weekStart = new Date(dateObj)
-        weekStart.setDate(dateObj.getDate() - dateObj.getDay())
-        label = weekStart.toISOString().split("T")[0]
+        setSales(rows);
+        setLoading(false);
+      },
+      (err) => {
+        console.error("Firestore storehistoryc error:", err);
+        setSales([]);
+        setLoading(false);
       }
+    );
+    return () => unsub();
+  }, []);
 
-      if (!aggregated[label]) aggregated[label] = { revenue: 0, profit: 0 }
-      aggregated[label].revenue += sale.value
-      aggregated[label].profit += sale.downPayment
-    })
+  const series: SalesPoint[] = useMemo(() => {
+    const agg: Record<string, number> = {};
+    for (const s of sales) {
+      const d = new Date(s.date);
+      let label = "";
+      if (period === "month") {
+        label = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      } else {
+        const weekStart = new Date(d);
+        weekStart.setDate(d.getDate() - d.getDay()); // domingo
+        label = weekStart.toISOString().slice(0, 10);
+      }
+      agg[label] = (agg[label] ?? 0) + s.value;
+    }
+    return Object.entries(agg)
+      .map(([label, revenue]) => ({ label, revenue }))
+      .sort((a, b) => (a.label > b.label ? 1 : -1));
+  }, [sales, period]);
 
-    const formatted: SalesData[] = Object.entries(aggregated)
-      .map(([label, values]) => ({
-        label,
-        revenue: values.revenue,
-        profit: values.profit,
-      }))
-      .sort((a, b) => (a.label > b.label ? 1 : -1))
+  const totalRevenue = useMemo(() => sales.reduce((sum, s) => sum + s.value, 0), [sales]);
+  const totalSales = sales.length;
 
-    setData(formatted)
-  }, [period])
-
-  const totalRevenue = mockSalesData.reduce((sum, s) => sum + s.value, 0)
-  const totalProfit = mockSalesData.reduce((sum, s) => sum + s.downPayment, 0)
-  const totalSales = mockSalesData.length
-  const avgTicket = totalSales ? totalRevenue / totalSales : 0
+  if (loading) return <div className="p-6">Carregando...</div>;
 
   return (
     <div className="p-6 space-y-6">
@@ -113,67 +98,26 @@ export default function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader>
-            <CardTitle>Faturamento Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {new Intl.NumberFormat("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }).format(totalRevenue)}
-            </p>
-          </CardContent>
+          <CardHeader><CardTitle>Faturamento Total</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold">{money(totalRevenue)}</p></CardContent>
         </Card>
+
         <Card>
-          <CardHeader>
-            <CardTitle>Lucro Líquido</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-green-600">
-              {new Intl.NumberFormat("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }).format(totalProfit)}
-            </p>
-          </CardContent>
+          <CardHeader><CardTitle>Total de Vendas</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold">{totalSales}</p></CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Ticket Médio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {new Intl.NumberFormat("pt-BR", {
-                style: "currency",
-                currency: "BRL",
-              }).format(avgTicket)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Total de Vendas</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{totalSales}</p>
-          </CardContent>
-        </Card>
+        {/* Removidos: Lucro Líquido e Ticket Médio */}
       </div>
 
       <div className="flex gap-2">
         <button
-          className={`px-3 py-1 rounded ${
-            period === "week" ? "bg-orange-600 text-white" : "bg-muted"
-          }`}
+          className={`px-3 py-1 rounded ${period === "week" ? "bg-orange-600 text-white" : "bg-muted"}`}
           onClick={() => setPeriod("week")}
         >
           Semana
         </button>
         <button
-          className={`px-3 py-1 rounded ${
-            period === "month" ? "bg-orange-600 text-white" : "bg-muted"
-          }`}
+          className={`px-3 py-1 rounded ${period === "month" ? "bg-orange-600 text-white" : "bg-muted"}`}
           onClick={() => setPeriod("month")}
         >
           Mês
@@ -187,20 +131,12 @@ export default function Dashboard() {
         <CardContent>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
+              <LineChart data={series}>
                 <CartesianGrid stroke="#ccc" strokeDasharray="5 5" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip
-                  formatter={(value: number) => {
-                    return new Intl.NumberFormat("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    }).format(value)
-                  }}
-                />
+                <Tooltip formatter={(v: number) => money(v)} />
                 <Line type="monotone" dataKey="revenue" stroke="#ea580c" name="Faturamento" />
-                <Line type="monotone" dataKey="profit" stroke="#16a34a" name="Lucro Líquido" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -208,9 +144,7 @@ export default function Dashboard() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Últimas Vendas de Motos</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Últimas Vendas</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -224,35 +158,20 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {mockSalesData
-                  .slice(-10)
-                  .reverse()
-                  .map((sale) => (
-                    <tr key={sale.id} className="border-b">
-                      <td className="p-2">
-                        {new Date(sale.date).toLocaleDateString("pt-BR")}
-                      </td>
-                      <td className="p-2">{sale.model}</td>
-                      <td className="p-2">{sale.clientName}</td>
-                      <td className="p-2">
-                        {new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(sale.value)}
-                      </td>
-                      <td className="p-2 text-green-600">
-                        {new Intl.NumberFormat("pt-BR", {
-                          style: "currency",
-                          currency: "BRL",
-                        }).format(sale.downPayment)}
-                      </td>
-                    </tr>
-                  ))}
+                {sales.slice(-10).reverse().map((s) => (
+                  <tr key={s.id} className="border-b">
+                    <td className="p-2">{new Date(s.date).toLocaleDateString("pt-BR")}</td>
+                    <td className="p-2">{s.model}</td>
+                    <td className="p-2">{s.clientName}</td>
+                    <td className="p-2">{money(s.value)}</td>
+                    <td className="p-2 text-green-600">{money(s.downPayment ?? 0)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
