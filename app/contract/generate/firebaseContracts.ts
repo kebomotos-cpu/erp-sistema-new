@@ -31,6 +31,7 @@ type Venda = {
   dataHoraEmissao?: string;
   dataVendaPorExtenso?: string;
   cidadeUpper?: string;
+  detalhesPagamento?: string;
 };
 
 type ContractModels = Record<string, string>; // { [tipoContrato]: html }
@@ -42,15 +43,11 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
   try {
     const docRef = doc(db, "contracts", "modeloBase");
     const snap = await getDoc(docRef);
-
     if (!snap.exists()) throw new Error("Documento modeloBase não encontrado.");
 
     const data = snap.data() as ContractModels;
     const modelo = data[tipoContrato];
-    if (!modelo)
-      throw new Error(
-        `Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`
-      );
+    if (!modelo) throw new Error(`Modelo '${tipoContrato}' não encontrado dentro de modeloBase.`);
 
     const dataHoraEmissao = new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
@@ -67,30 +64,22 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
       year: "numeric",
     });
 
-    const vendedorDefault: Required<
-      Pick<Venda, "vendedorResponsavel" | "vendedorCpf">
-    > = {
-      vendedorResponsavel: "IRAN DE SOUZA",
+    const vendedorDefault: Required<Pick<Venda, "vendedorResponsavel" | "vendedorCpf">> = {
+      vendedorResponsavel: "KEBO MOTOS LTDA",
       vendedorCpf: "15.536.385/0001-83",
     };
 
     const htmlPreenchido = preencherCampos(modelo, {
       ...vendedorDefault,
-      ...venda,
-      dataHoraEmissao,
-      dataVendaPorExtenso,
+      ...venda, // valores vindos da página têm prioridade
+      dataHoraEmissao: venda.dataHoraEmissao ?? dataHoraEmissao,
+      dataVendaPorExtenso: venda.dataVendaPorExtenso ?? dataVendaPorExtenso,
       cidadeUpper: venda.cidade?.toUpperCase() || "",
     });
 
-    // A lib pode retornar um Blob ou um buffer-like. Normalizamos para Blob sem usar `any`.
-    const maybeBlob = await HtmlDocx.asBlob(htmlPreenchido, {
-      orientation: "portrait",
-    });
-
+    const maybeBlob = await HtmlDocx.asBlob(htmlPreenchido, { orientation: "portrait" });
     const blob: Blob =
-      maybeBlob instanceof Blob
-        ? maybeBlob
-        : new Blob([maybeBlob as BlobPart], { type: DOCX_MIME });
+      maybeBlob instanceof Blob ? maybeBlob : new Blob([maybeBlob as BlobPart], { type: DOCX_MIME });
 
     saveAs(blob, `${tipoContrato}_${venda.clienteNome ?? "cliente"}.docx`);
   } catch (err) {
@@ -101,37 +90,37 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
 
 function preencherCampos(modelo: string, venda: Venda) {
   if (typeof modelo !== "string") return "";
+  const safe = (v: unknown) => (v !== undefined && v !== null ? String(v) : "");
 
   return modelo
-    .replace(/{{id}}/g, venda.id || "")
-    .replace(/{{vendedorResponsavel}}/g, venda.vendedorResponsavel || "")
-    .replace(/{{vendedorCpf}}/g, venda.vendedorCpf || "")
-    .replace(/{{clienteNome}}/g, venda.clienteNome || "")
-    .replace(/{{cpf}}/g, venda.cpf || "")
-    .replace(/{{endereco}}/g, venda.endereco || "")
-    .replace(/{{bairro}}/g, venda.bairro || "")
-    .replace(/{{cidade}}/g, venda.cidade || "")
-    .replace(/{{estado}}/g, venda.estado || "")
-    .replace(/{{cidadeUpper}}/g, venda.cidadeUpper || "")
-    .replace(/{{marca}}/g, venda.marca || "")
-    .replace(/{{modelo}}/g, venda.modelo || "")
-    .replace(/{{ano}}/g, String(venda.ano ?? ""))
-    .replace(/{{cor}}/g, venda.cor || "")
-    .replace(/{{placa}}/g, venda.placa || "")
-    .replace(/{{renavam}}/g, venda.renavam || "")
-    .replace(/{{chassi}}/g, venda.chassi || "")
-    .replace(/{{km}}/g, String(venda.km ?? ""))
+    .replace(/{{id}}/g, safe(venda.id))
+    .replace(/{{vendedorResponsavel}}/g, safe(venda.vendedorResponsavel))
+    .replace(/{{vendedorCpf}}/g, safe(venda.vendedorCpf))
+    .replace(/{{clienteNome}}/g, safe(venda.clienteNome))
+    .replace(/{{cpf}}/g, safe(venda.cpf))
+    .replace(/{{endereco}}/g, safe(venda.endereco))
+    .replace(/{{bairro}}/g, safe(venda.bairro))
+    .replace(/{{cidade}}/g, safe(venda.cidade))
+    .replace(/{{estado}}/g, safe(venda.estado))
+    .replace(/{{cidadeUpper}}/g, safe(venda.cidadeUpper))
+    .replace(/{{marca}}/g, safe(venda.marca))
+    .replace(/{{modelo}}/g, safe(venda.modelo))
+    .replace(/{{ano}}/g, safe(venda.ano))
+    .replace(/{{cor}}/g, safe(venda.cor))
+    .replace(/{{placa}}/g, safe(venda.placa))
+    .replace(/{{renavam}}/g, safe(venda.renavam))
+    .replace(/{{chassi}}/g, safe(venda.chassi))
+    .replace(/{{km}}/g, safe(venda.km))
     .replace(
       /{{valorVenda}}/g,
-      (venda.valorVenda ?? 0).toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-      })
+      (venda.valorVenda ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })
     )
-    .replace(/{{entrada}}/g, venda.entrada || "")
-    .replace(/{{entradaExtenso}}/g, venda.entradaExtenso || "")
-    .replace(/{{valorParcela}}/g, venda.valorParcela || "")
-    .replace(/{{valorParcelaExtenso}}/g, venda.valorParcelaExtenso || "")
-    .replace(/{{parcelas}}/g, venda.parcelas || "")
-    .replace(/{{dataHoraEmissao}}/g, venda.dataHoraEmissao || "")
-    .replace(/{{dataVendaPorExtenso}}/g, venda.dataVendaPorExtenso || "");
+    .replace(/{{entrada}}/g, safe(venda.entrada))
+    .replace(/{{entradaExtenso}}/g, safe(venda.entradaExtenso))
+    .replace(/{{valorParcela}}/g, safe(venda.valorParcela))
+    .replace(/{{valorParcelaExtenso}}/g, safe(venda.valorParcelaExtenso))
+    .replace(/{{parcelas}}/g, safe(venda.parcelas))
+    .replace(/{{detalhesPagamento}}/g, safe(venda.detalhesPagamento))
+    .replace(/{{dataHoraEmissao}}/g, safe(venda.dataHoraEmissao))
+    .replace(/{{dataVendaPorExtenso}}/g, safe(venda.dataVendaPorExtenso));
 }

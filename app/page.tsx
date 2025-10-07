@@ -10,6 +10,10 @@ import {
   collection, onSnapshot, orderBy, query,
   type Timestamp, type CollectionReference
 } from "firebase/firestore";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import type { DateRange } from "react-day-picker";
 
 type Sale = {
   id: string;
@@ -43,38 +47,49 @@ const toNumber = (v: unknown): number => {
 const toIsoDate = (v: FirestoreSaleDoc["dataVenda"]): string => {
   if (!v) return "";
   if (typeof v === "string") return v.slice(0, 10);
-  const d: Date | undefined = typeof v.toDate === "function" ? v.toDate() : undefined;
+  const d: Date | undefined = typeof (v as any).toDate === "function" ? (v as any).toDate() : undefined;
   return d ? d.toISOString().slice(0, 10) : "";
 };
+
+// helpers de data sem libs externas
+const isValidDate = (d: Date) => !Number.isNaN(d.getTime());
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 
 export default function Dashboard() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"week" | "month">("month");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   useEffect(() => {
-    // Coleção tipada elimina o any no d.data()
     const col = collection(db, "storehistoryc") as CollectionReference<FirestoreSaleDoc>;
     const q = query(col, orderBy("dataVenda", "asc"));
 
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const rows: Sale[] = snap.docs
+        const seen = new Set<string>();
+
+        const rows = snap.docs
           .map((d) => {
-            const s = d.data(); // já é FirestoreSaleDoc
+            const s = d.data();
             const rawDate = toIsoDate(s.dataVenda);
+            const key = `${s.modelo ?? ""}-${s.clienteNome ?? ""}-${rawDate}`;
+
+            if (seen.has(key)) return null;
+            seen.add(key);
+
             return {
               id: d.id,
-              date: rawDate,                               // "2025-10-04"
+              date: rawDate,
               model: String(s.modelo ?? ""),
               clientName: String(s.clienteNome ?? ""),
-              value: toNumber(s.valorVenda),               // 27340
-              downPayment: toNumber(s.entrada),            // vazio -> 0
-            };
+              value: toNumber(s.valorVenda),
+              downPayment: toNumber(s.entrada),
+            } as Sale;
           })
-          .filter((r) => r.date && r.model && r.clientName);
-
+          .filter((r): r is Sale => r !== null);
         setSales(rows);
         setLoading(false);
       },
@@ -84,19 +99,38 @@ export default function Dashboard() {
         setLoading(false);
       }
     );
+
     return () => unsub();
   }, []);
 
+  // Aplica filtro por intervalo de datas (Calendar)
+  const filteredSales = useMemo(() => {
+    if (!dateRange?.from && !dateRange?.to) return sales;
+    const minDate = dateRange?.from ? startOfDay(dateRange.from) : new Date(-8640000000000000);
+    const maxDate = dateRange?.to ? endOfDay(dateRange.to) : new Date(8640000000000000);
+
+    return sales.filter((s) => {
+      if (!s.date) return false;
+      const d = new Date(s.date);
+      if (!isValidDate(d)) return false;
+      return d >= minDate && d <= maxDate;
+    });
+  }, [sales, dateRange]);
+
   const series: SalesPoint[] = useMemo(() => {
     const agg: Record<string, number> = {};
-    for (const s of sales) {
+    for (const s of filteredSales) {
+      if (!s.date) continue;
       const d = new Date(s.date);
+      if (!isValidDate(d)) continue;
+
       let label = "";
       if (period === "month") {
         label = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       } else {
         const weekStart = new Date(d);
-        weekStart.setDate(d.getDate() - d.getDay()); // domingo
+        // Domingo como início da semana
+        weekStart.setDate(d.getDate() - d.getDay());
         label = weekStart.toISOString().slice(0, 10);
       }
       agg[label] = (agg[label] ?? 0) + s.value;
@@ -104,10 +138,16 @@ export default function Dashboard() {
     return Object.entries(agg)
       .map(([label, revenue]) => ({ label, revenue }))
       .sort((a, b) => (a.label > b.label ? 1 : -1));
-  }, [sales, period]);
+  }, [filteredSales, period]);
 
-  const totalRevenue = useMemo(() => sales.reduce((sum, s) => sum + s.value, 0), [sales]);
-  const totalSales = sales.length;
+  const totalRevenue = useMemo(() => filteredSales.reduce((sum, s) => sum + s.value, 0), [filteredSales]);
+  const totalSales = filteredSales.length;
+
+  const formatRangeLabel = (r?: DateRange) => {
+    if (!r?.from && !r?.to) return "Filtrar por período";
+    const fmt = (d?: Date) => (d ? d.toLocaleDateString("pt-BR") : "—");
+    return `${fmt(r?.from)} — ${fmt(r?.to)}`;
+  };
 
   if (loading) return <div className="p-6">Carregando...</div>;
 
@@ -127,19 +167,55 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="flex gap-2">
-        <button
-          className={`px-3 py-1 rounded ${period === "week" ? "bg-orange-600 text-white" : "bg-muted"}`}
-          onClick={() => setPeriod("week")}
-        >
-          Semana
-        </button>
-        <button
-          className={`px-3 py-1 rounded ${period === "month" ? "bg-orange-600 text-white" : "bg-muted"}`}
-          onClick={() => setPeriod("month")}
-        >
-          Mês
-        </button>
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Toggle Semana/Mês */}
+        <div className="flex gap-2">
+          <Button
+            variant={period === "week" ? "default" : "secondary"}
+            onClick={() => setPeriod("week")}
+          >
+            Semana
+          </Button>
+          <Button
+            variant={period === "month" ? "default" : "secondary"}
+            onClick={() => setPeriod("month")}
+          >
+            Mês
+          </Button>
+        </div>
+
+        {/* Filtro por intervalo (Calendar) */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="min-w-[240px] justify-start">
+              {formatRangeLabel(dateRange)}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              numberOfMonths={2}
+              selected={dateRange}
+              onSelect={(r) => setDateRange(r)}
+              initialFocus
+            />
+            <div className="flex justify-between p-2 border-t">
+              <Button variant="ghost" onClick={() => setDateRange(undefined)}>
+                Limpar
+              </Button>
+              <Button onClick={() => { /* Popover fecha ao clicar fora; manter básico */ }}>
+                Aplicar
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* Ação rápida para limpar via botão separado */}
+        {dateRange && (
+          <Button variant="secondary" onClick={() => setDateRange(undefined)}>
+            Remover filtro de data
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -176,9 +252,11 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {sales.slice(-10).reverse().map((s) => (
+                {filteredSales.slice(-10).reverse().map((s) => (
                   <tr key={s.id} className="border-b">
-                    <td className="p-2">{new Date(s.date).toLocaleDateString("pt-BR")}</td>
+                    <td className="p-2">
+                      {s.date ? new Date(s.date).toLocaleDateString("pt-BR") : "—"}
+                    </td>
                     <td className="p-2">{s.model}</td>
                     <td className="p-2">{s.clientName}</td>
                     <td className="p-2">{money(s.value)}</td>

@@ -43,6 +43,7 @@ const BASE_NAV: NavItem[] = [
   { name: "Histórico de Vendas", href: "/historico-de-vendas", icon: Receipt , roles: ["dono", "secretaria", "vendedor"]},
   // exclusivo do dono
   { name: "Lucro por Moto", href: "/motos-lucro", icon: BarChart2, roles: ["dono"] },
+  { name: "Despesas Gerais Kebo", href: "/despesas-dono", icon: BarChart2, roles: ["dono"] },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
