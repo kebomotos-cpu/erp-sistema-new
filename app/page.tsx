@@ -8,7 +8,7 @@ import {
 import { db } from "@/firebase/config";
 import {
   collection, onSnapshot, orderBy, query,
-  type Timestamp, type CollectionReference
+  type Timestamp, type CollectionReference, type QueryDocumentSnapshot
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -44,11 +44,19 @@ const toNumber = (v: unknown): number => {
   return 0;
 };
 
+// type guard seguro para objetos com toDate()
+function hasToDate(x: unknown): x is { toDate: () => Date } {
+  return typeof x === "object" && x !== null && "toDate" in x && typeof (x as { toDate: unknown }).toDate === "function";
+}
+
 const toIsoDate = (v: FirestoreSaleDoc["dataVenda"]): string => {
   if (!v) return "";
   if (typeof v === "string") return v.slice(0, 10);
-  const d: Date | undefined = typeof (v as any).toDate === "function" ? (v as any).toDate() : undefined;
-  return d ? d.toISOString().slice(0, 10) : "";
+  if (hasToDate(v)) {
+    const d = v.toDate();
+    return d.toISOString().slice(0, 10);
+  }
+  return "";
 };
 
 // helpers de data sem libs externas
@@ -72,7 +80,7 @@ export default function Dashboard() {
         const seen = new Set<string>();
 
         const rows = snap.docs
-          .map((d) => {
+          .map((d: QueryDocumentSnapshot<FirestoreSaleDoc>) => {
             const s = d.data();
             const rawDate = toIsoDate(s.dataVenda);
             const key = `${s.modelo ?? ""}-${s.clienteNome ?? ""}-${rawDate}`;
@@ -80,20 +88,21 @@ export default function Dashboard() {
             if (seen.has(key)) return null;
             seen.add(key);
 
-            return {
+            const row: Sale = {
               id: d.id,
               date: rawDate,
               model: String(s.modelo ?? ""),
               clientName: String(s.clienteNome ?? ""),
               value: toNumber(s.valorVenda),
               downPayment: toNumber(s.entrada),
-            } as Sale;
+            };
+            return row;
           })
           .filter((r): r is Sale => r !== null);
         setSales(rows);
         setLoading(false);
       },
-      (err) => {
+      (err: unknown) => {
         console.error("Firestore storehistoryc error:", err);
         setSales([]);
         setLoading(false);

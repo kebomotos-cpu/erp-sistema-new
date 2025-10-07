@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, type Timestamp } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { toast } from "sonner";
 
@@ -23,44 +23,78 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 // ---------- Tipos ----------
+type FirestorePrimitiveDate = string | Timestamp | Date | null | undefined;
+
 type SaleFS = {
-  dataVenda?: string; // "YYYY-MM-DD" preferível
-  valorVenda?: number | string;
-  vendedorResponsavel?: string;
-  clienteNome?: string;
-  modelo?: string;
+  dataVenda?: FirestorePrimitiveDate; // string "YYYY-MM-DD", Timestamp ou Date
+  valorVenda?: number | string | null;
+  vendedorResponsavel?: string | null;
+  clienteNome?: string | null;
+  modelo?: string | null;
 };
 
 type Sale = {
   id: string;
-  date: string; // normalizado YYYY-MM-DD
+  date: string;  // YYYY-MM-DD normalizado
   value: number; // valorVenda
-  seller: string; // vendedorResponsavel
+  seller: string;
   label: string; // exibição rápida
   client: string;
   model: string;
 };
 
-// ---------- Utils ----------
-const money = (n: number) => (isFinite(n) ? n : 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+type VendedorAgg = { seller: string; total: number; count: number };
+type SalesPoint = { label: string; revenue: number };
 
-const num = (v: unknown) => {
-  if (typeof v === "number") return v;
+// ---------- Utils ----------
+const money = (n: number) =>
+  (Number.isFinite(n) ? n : 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function parseNumberBR(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
   if (typeof v === "string") {
-    const s = v.replace(/\./g, "").replace(",", ".");
-    const n = Number(s);
-    return isFinite(n) ? n : 0;
+    const norm = v.trim().replace(/\./g, "").replace(",", ".");
+    const parsed = Number(norm);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
-};
+}
 
-const toISODate = (s?: string) => (s ? s.slice(0, 10) : "");
+function toISODateFromFS(input: FirestorePrimitiveDate): string {
+  if (!input) return "";
+  // Firestore Timestamp
+  if (typeof input === "object" && input !== null && "toDate" in input) {
+    try {
+      const d = (input as Timestamp).toDate();
+      return d.toISOString().slice(0, 10);
+    } catch {
+      // prossegue para as demais tentativas
+    }
+  }
+  // Date nativo
+  if (input instanceof Date) {
+    if (Number.isFinite(input.getTime())) return input.toISOString().slice(0, 10);
+    return "";
+  }
+  // String ISO/aaaa-mm-dd
+  if (typeof input === "string") {
+    const s = input.slice(0, 10);
+    // validação rápida yyyy-mm-dd
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(input);
+    if (Number.isFinite(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  return "";
+}
 
 export default function DashVendasPage() {
   // filtros
+  const today = new Date();
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date(),
+    from: startOfMonth,
+    to: today,
   });
   const [sellerFilter, setSellerFilter] = useState<string>("__ALL__");
 
@@ -73,25 +107,39 @@ export default function DashVendasPage() {
     (async () => {
       try {
         const qSales = query(collection(db, "storehistoryc"), orderBy("dataVenda", "asc"));
-        const sSnap = await getDocs(qSales);
-        const sList: Sale[] = sSnap.docs
-          .map((d) => {
-            const raw = d.data() as SaleFS;
-            const dt = toISODate(raw.dataVenda || String((raw as any)["dataVenda"] ?? ""));
-            return {
-              id: d.id,
-              date: dt,
-              value: num(raw.valorVenda),
-              seller: (raw.vendedorResponsavel || "—").toString(),
-              label: `${raw.clienteNome ?? ""} • ${raw.modelo ?? ""}`,
-              client: raw.clienteNome ?? "",
-              model: raw.modelo ?? "",
-            } as Sale;
-          })
-          .filter((r) => r.date);
+        const snap = await getDocs(qSales);
 
-        setSales(sList);
-        setSellers(Array.from(new Set(sList.map((s) => s.seller).filter(Boolean))).sort((a, b) => a.localeCompare(b)));
+        const list: Sale[] = snap.docs
+          .map((doc) => {
+            const raw = doc.data() as SaleFS;
+
+            const dt = toISODateFromFS(raw.dataVenda);
+            if (!dt) return null;
+
+            const value = parseNumberBR(raw.valorVenda);
+            const seller = (raw.vendedorResponsavel ?? "—").toString();
+            const client = raw.clienteNome ?? "";
+            const model = raw.modelo ?? "";
+
+            const item: Sale = {
+              id: doc.id,
+              date: dt,
+              value,
+              seller,
+              label: `${client} • ${model}`,
+              client,
+              model,
+            };
+            return item;
+          })
+          .filter((x): x is Sale => Boolean(x));
+
+        setSales(list);
+
+        const uniqSellers = Array.from(
+          new Set(list.map((s) => s.seller).filter((v) => v && v !== "—"))
+        ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        setSellers(uniqSellers);
       } catch (e) {
         console.error(e);
         toast.error("Erro ao carregar dados.");
@@ -103,46 +151,53 @@ export default function DashVendasPage() {
   const filteredSales = useMemo(() => {
     const from = dateRange?.from ? new Date(dateRange.from) : null;
     const to = dateRange?.to ? new Date(dateRange.to) : null;
+
+    const fromFloor = from ? new Date(from.getFullYear(), from.getMonth(), from.getDate()) : null;
+    const toCeil = to ? new Date(to.getFullYear(), to.getMonth(), to.getDate()) : null;
+
     return sales.filter((s) => {
-      const d = new Date(s.date + "T00:00:00");
-      const inDate = (!from || d >= new Date(from.getFullYear(), from.getMonth(), from.getDate())) && (!to || d <= new Date(to.getFullYear(), to.getMonth(), to.getDate()));
+      const d = new Date(`${s.date}T00:00:00`);
+      const inDate =
+        (!fromFloor || d >= fromFloor) &&
+        (!toCeil || d <= toCeil);
       const inSeller = sellerFilter === "__ALL__" || s.seller === sellerFilter;
       return inDate && inSeller;
     });
   }, [sales, dateRange, sellerFilter]);
 
   // Série por dia
-  const chartData = useMemo(() => {
+  const chartData: SalesPoint[] = useMemo(() => {
     const byDay = new Map<string, number>();
-    filteredSales.forEach((s) => byDay.set(s.date, (byDay.get(s.date) || 0) + s.value));
+    for (const s of filteredSales) {
+      byDay.set(s.date, (byDay.get(s.date) ?? 0) + s.value);
+    }
     return Array.from(byDay.entries())
       .map(([label, revenue]) => ({ label, revenue }))
       .sort((a, b) => (a.label > b.label ? 1 : -1));
   }, [filteredSales]);
 
   // Por vendedor (respeitando filtros de data)
-  const porVendedor = useMemo(() => {
+  const porVendedor: VendedorAgg[] = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
-    filteredSales.forEach((s) => {
-      const cur = map.get(s.seller) || { total: 0, count: 0 };
+    for (const s of filteredSales) {
+      const cur = map.get(s.seller) ?? { total: 0, count: 0 };
       cur.total += s.value;
       cur.count += 1;
       map.set(s.seller, cur);
-    });
+    }
     return Array.from(map.entries())
       .map(([seller, v]) => ({ seller, total: v.total, count: v.count }))
       .sort((a, b) => b.total - a.total);
   }, [filteredSales]);
 
-  // Detalhamento por vendedor: agrupamento das vendas filtradas
+  // Detalhamento por vendedor
   const vendasPorVendedor = useMemo(() => {
     const map = new Map<string, Sale[]>();
-    filteredSales.forEach((s) => {
-      const arr = map.get(s.seller) || [];
+    for (const s of filteredSales) {
+      const arr = map.get(s.seller) ?? [];
       arr.push(s);
       map.set(s.seller, arr);
-    });
-    // ordenar cada lista por data desc para leitura
+    }
     for (const [k, arr] of map.entries()) {
       arr.sort((a, b) => (a.date < b.date ? 1 : -1));
       map.set(k, arr);
@@ -175,7 +230,13 @@ export default function DashVendasPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-2" align="start">
-                <Calendar mode="range" selected={dateRange} onSelect={setDateRange} numberOfMonths={2} locale={ptBR} />
+                <Calendar
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={setDateRange}
+                  numberOfMonths={2}
+                  locale={ptBR}
+                />
               </PopoverContent>
             </Popover>
           </div>
@@ -204,7 +265,7 @@ export default function DashVendasPage() {
               variant="outline"
               onClick={() => {
                 setSellerFilter("__ALL__");
-                setDateRange({ from: new Date(new Date().getFullYear(), new Date().getMonth(), 1), to: new Date() });
+                setDateRange({ from: startOfMonth, to: today });
               }}
             >
               Limpar filtros
@@ -265,7 +326,7 @@ export default function DashVendasPage() {
       <Card className="p-4">
         <div className="text-sm text-muted-foreground mb-3">Detalhamento das vendas (filtradas) por vendedor</div>
         {porVendedor.map(({ seller }) => {
-          const vendas = vendasPorVendedor.get(seller) || [];
+          const vendas = vendasPorVendedor.get(seller) ?? [];
           return (
             <div key={seller} className="mb-6">
               <div className="font-semibold mb-2">{seller}</div>
@@ -290,7 +351,9 @@ export default function DashVendasPage() {
                     ))}
                     {vendas.length === 0 && (
                       <tr>
-                        <td className="p-3 text-muted-foreground" colSpan={4}>Sem vendas deste vendedor no período.</td>
+                        <td className="p-3 text-muted-foreground" colSpan={4}>
+                          Sem vendas deste vendedor no período.
+                        </td>
                       </tr>
                     )}
                   </tbody>

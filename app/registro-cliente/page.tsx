@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Plus, UserPlus, Trash2 } from "lucide-react";
+import { UserPlus, Trash2 } from "lucide-react";
 import { db } from "@/firebase/config";
 import {
   collection,
@@ -21,6 +21,7 @@ import {
   getDocs,
   deleteDoc,
   doc,
+  updateDoc,
 } from "firebase/firestore";
 import { toast } from "sonner";
 
@@ -50,9 +51,15 @@ const defaultAvatars = [
   "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/9334228.jpg-eOsHCkvVrVAwcPHKYSs5sQwVKsqWpC.jpeg",
 ];
 
+// Helper para montar endereço
+const formatEndereco = (e: {
+  rua: string; numero: string; bairro: string; cidade: string; estado: string; cep: string;
+}) =>
+  `${e.rua}, ${e.numero} - ${e.bairro}, ${e.cidade} - ${e.estado}, CEP ${e.cep}`;
+
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  // controle da etapa
+  // cadastro em duas etapas
   const [etapaCadastro, setEtapaCadastro] = useState(1);
   const [enderecoCliente, setEnderecoCliente] = useState({
     rua: "",
@@ -76,10 +83,10 @@ export default function ClientesPage() {
   });
   const [extras, setExtras] = useState<{ key: string; value: string }[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // edição de endereço
   const [editarEnderecoOpen, setEditarEnderecoOpen] = useState(false);
-  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(
-    null
-  );
+  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [novoEndereco, setNovoEndereco] = useState({
     rua: "",
     numero: "",
@@ -90,11 +97,7 @@ export default function ClientesPage() {
   });
 
   const [avatarSelecionado, setAvatarSelecionado] = useState(defaultAvatars[0]);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean;
-    id: string;
-    nome: string;
-  }>({
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; id: string; nome: string; }>({
     open: false,
     id: "",
     nome: "",
@@ -103,10 +106,10 @@ export default function ClientesPage() {
   useEffect(() => {
     const fetchClientes = async () => {
       const snapshot = await getDocs(collection(db, "clientes"));
-      const list = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Cliente[];
+      const list = snapshot.docs.map((d) => {
+        const data = d.data() as Omit<Cliente, "id">;
+        return { id: d.id, ...data };
+      }) as Cliente[];
       setClientes(list);
     };
     fetchClientes();
@@ -114,7 +117,6 @@ export default function ClientesPage() {
 
   const handleCadastrarCliente = async () => {
     if (etapaCadastro === 1) {
-      // passa pra etapa de endereço
       if (!novoCliente.nome || !novoCliente.cpf) {
         toast.error("Preencha pelo menos o nome e CPF do cliente.");
         return;
@@ -123,23 +125,20 @@ export default function ClientesPage() {
       return;
     }
 
-    // etapa 2: salvar tudo
+    // etapa 2: salvar
     try {
       const cliente = {
         ...novoCliente,
-        endereco: `${enderecoCliente.rua}, ${enderecoCliente.numero} - ${enderecoCliente.bairro}, ${enderecoCliente.cidade} - ${enderecoCliente.estado}, CEP ${enderecoCliente.cep}`,
+        endereco: formatEndereco(enderecoCliente),
         avatar: avatarSelecionado,
-        extras: extras.reduce(
-          (acc, curr) => ({ ...acc, [curr.key]: curr.value }),
-          {}
-        ),
+        extras: extras.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {}),
       };
 
       const docRef = await addDoc(collection(db, "clientes"), cliente);
-      setClientes([...clientes, { id: docRef.id, ...cliente }]);
+      setClientes((prev) => [...prev, { id: docRef.id, ...cliente }]);
       setModalOpen(false);
 
-      // resetar tudo
+      // reset
       setNovoCliente({
         nome: "",
         cpf: "",
@@ -151,14 +150,7 @@ export default function ClientesPage() {
         avatar: defaultAvatars[0],
         extras: {},
       });
-      setEnderecoCliente({
-        rua: "",
-        numero: "",
-        bairro: "",
-        cidade: "",
-        estado: "",
-        cep: "",
-      });
+      setEnderecoCliente({ rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "" });
       setExtras([]);
       setEtapaCadastro(1);
 
@@ -183,13 +175,15 @@ export default function ClientesPage() {
       toast.error("Erro ao remover cliente.");
     }
   };
+
   const handleSalvarEndereco = async () => {
     if (!clienteSelecionado) return;
 
     try {
-      const enderecoCompleto = `${novoEndereco.rua}, ${novoEndereco.numero} - ${novoEndereco.bairro}, ${novoEndereco.cidade} - ${novoEndereco.estado}, CEP ${novoEndereco.cep}`;
-
+      const enderecoCompleto = formatEndereco(novoEndereco);
       const clienteRef = doc(db, "clientes", clienteSelecionado.id);
+
+      // log da edição
       await addDoc(collection(db, "clientes_edicoes"), {
         clienteId: clienteSelecionado.id,
         tipo: "atualizacao_endereco",
@@ -197,22 +191,17 @@ export default function ClientesPage() {
         enderecoAntigo: clienteSelecionado.endereco,
         enderecoNovo: enderecoCompleto,
       });
-      await deleteDoc(clienteRef);
-      await addDoc(collection(db, "clientes"), {
-        ...clienteSelecionado,
-        endereco: enderecoCompleto,
-      });
+
+      // **Fix**: atualizar, não deletar/recriar
+      await updateDoc(clienteRef, { endereco: enderecoCompleto });
 
       setClientes((prev) =>
-        prev.map((c) =>
-          c.id === clienteSelecionado.id
-            ? { ...c, endereco: enderecoCompleto }
-            : c
-        )
+        prev.map((c) => (c.id === clienteSelecionado.id ? { ...c, endereco: enderecoCompleto } : c))
       );
 
       toast.success("Endereço atualizado com sucesso!");
       setEditarEnderecoOpen(false);
+      setClienteSelecionado(null);
     } catch (error) {
       console.error("Erro ao atualizar endereço:", error);
       toast.error("Erro ao atualizar endereço.");
@@ -222,9 +211,7 @@ export default function ClientesPage() {
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-[#dc2626]">
-          Cadastro de Clientes
-        </h1>
+        <h1 className="text-3xl font-bold text-[#dc2626]">Cadastro de Clientes</h1>
         <Button
           onClick={() => setModalOpen(true)}
           className="bg-[#dc2626] hover:bg-[#b91c1c] text-white"
@@ -234,31 +221,23 @@ export default function ClientesPage() {
       </div>
 
       {clientes.length === 0 && (
-        <p className="text-muted-foreground">
-          Nenhum cliente cadastrado ainda.
-        </p>
+        <p className="text-muted-foreground">Nenhum cliente cadastrado ainda.</p>
       )}
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {clientes.map((cliente) => (
-          <Card
-            key={cliente.id}
-            className="p-6 hover:shadow-lg transition-shadow relative"
-          >
+          <Card key={cliente.id} className="p-6 hover:shadow-lg transition-shadow relative">
             <Button
               variant="ghost"
               size="icon"
               onClick={() =>
-                setConfirmDialog({
-                  open: true,
-                  id: cliente.id,
-                  nome: cliente.nome,
-                })
+                setConfirmDialog({ open: true, id: cliente.id, nome: cliente.nome })
               }
               className="absolute top-2 right-2 text-red-600 hover:text-red-800"
             >
               <Trash2 className="h-5 w-5" />
             </Button>
+
             <Button
               variant="outline"
               size="sm"
@@ -266,6 +245,7 @@ export default function ClientesPage() {
               onClick={() => {
                 setClienteSelecionado(cliente);
                 setEditarEnderecoOpen(true);
+                // Pré-preencher cidade/estado do registro (demais campos ficam em branco)
                 setNovoEndereco({
                   rua: "",
                   numero: "",
@@ -293,38 +273,27 @@ export default function ClientesPage() {
             </div>
 
             <div className="mt-4 text-sm text-muted-foreground space-y-1">
-              <p>
-                <strong>CPF:</strong> {cliente.cpf}
-              </p>
-              <p>
-                <strong>Telefone:</strong> {cliente.telefone}
-              </p>
-              <p>
-                <strong>Email:</strong> {cliente.email}
-              </p>
-              <p>
-                <strong>Endereço:</strong> {cliente.endereco}
-              </p>
+              <p><strong>CPF:</strong> {cliente.cpf}</p>
+              <p><strong>Telefone:</strong> {cliente.telefone}</p>
+              <p><strong>Email:</strong> {cliente.email}</p>
+              <p><strong>Endereço:</strong> {cliente.endereco}</p>
             </div>
           </Card>
         ))}
       </div>
 
-      {/* MODAL CADASTRAR CLIENTE */}
+      {/* MODAL: CADASTRAR CLIENTE */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
-              {etapaCadastro === 1
-                ? "Cadastrar Novo Cliente"
-                : "Endereço do Cliente"}
+              {etapaCadastro === 1 ? "Cadastrar Novo Cliente" : "Endereço do Cliente"}
             </DialogTitle>
           </DialogHeader>
 
           {etapaCadastro === 1 ? (
-            // Etapa 1: dados pessoais
             <div className="space-y-4">
-              {/* AVATARES */}
+              {/* Avatares */}
               <div>
                 <Label className="mb-2 block">Selecione o Avatar</Label>
                 <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -332,9 +301,7 @@ export default function ClientesPage() {
                     <div
                       key={i}
                       className={`p-1 rounded-lg border cursor-pointer flex justify-center ${
-                        avatarSelecionado === avatar
-                          ? "border-[#dc2626]"
-                          : "border-muted"
+                        avatarSelecionado === avatar ? "border-[#dc2626]" : "border-muted"
                       }`}
                       onClick={() => setAvatarSelecionado(avatar)}
                     >
@@ -347,15 +314,13 @@ export default function ClientesPage() {
                 </div>
               </div>
 
-              {/* CAMPOS BÁSICOS */}
+              {/* Campos básicos */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nome Completo</Label>
                   <Input
                     value={novoCliente.nome}
-                    onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, nome: e.target.value })
-                    }
+                    onChange={(e) => setNovoCliente({ ...novoCliente, nome: e.target.value })}
                     placeholder="Ex: João da Silva"
                   />
                 </div>
@@ -363,9 +328,7 @@ export default function ClientesPage() {
                   <Label>CPF</Label>
                   <Input
                     value={novoCliente.cpf}
-                    onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, cpf: e.target.value })
-                    }
+                    onChange={(e) => setNovoCliente({ ...novoCliente, cpf: e.target.value })}
                     placeholder="000.000.000-00"
                   />
                 </div>
@@ -376,12 +339,7 @@ export default function ClientesPage() {
                   <Label>Telefone</Label>
                   <Input
                     value={novoCliente.telefone}
-                    onChange={(e) =>
-                      setNovoCliente({
-                        ...novoCliente,
-                        telefone: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setNovoCliente({ ...novoCliente, telefone: e.target.value })}
                     placeholder="(47) 99999-9999"
                   />
                 </div>
@@ -390,9 +348,7 @@ export default function ClientesPage() {
                   <Input
                     type="email"
                     value={novoCliente.email}
-                    onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, email: e.target.value })
-                    }
+                    onChange={(e) => setNovoCliente({ ...novoCliente, email: e.target.value })}
                     placeholder="email@exemplo.com"
                   />
                 </div>
@@ -406,19 +362,13 @@ export default function ClientesPage() {
               </Button>
             </div>
           ) : (
-            // Etapa 2: endereço
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Rua</Label>
                   <Input
                     value={enderecoCliente.rua}
-                    onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        rua: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, rua: e.target.value })}
                   />
                 </div>
                 <div>
@@ -426,10 +376,7 @@ export default function ClientesPage() {
                   <Input
                     value={enderecoCliente.numero}
                     onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        numero: e.target.value,
-                      })
+                      setEnderecoCliente({ ...enderecoCliente, numero: e.target.value })
                     }
                   />
                 </div>
@@ -441,10 +388,7 @@ export default function ClientesPage() {
                   <Input
                     value={enderecoCliente.bairro}
                     onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        bairro: e.target.value,
-                      })
+                      setEnderecoCliente({ ...enderecoCliente, bairro: e.target.value })
                     }
                   />
                 </div>
@@ -453,10 +397,7 @@ export default function ClientesPage() {
                   <Input
                     value={enderecoCliente.cidade}
                     onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        cidade: e.target.value,
-                      })
+                      setEnderecoCliente({ ...enderecoCliente, cidade: e.target.value })
                     }
                   />
                 </div>
@@ -468,10 +409,7 @@ export default function ClientesPage() {
                   <Input
                     value={enderecoCliente.estado}
                     onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        estado: e.target.value,
-                      })
+                      setEnderecoCliente({ ...enderecoCliente, estado: e.target.value })
                     }
                   />
                 </div>
@@ -479,28 +417,16 @@ export default function ClientesPage() {
                   <Label>CEP</Label>
                   <Input
                     value={enderecoCliente.cep}
-                    onChange={(e) =>
-                      setEnderecoCliente({
-                        ...enderecoCliente,
-                        cep: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cep: e.target.value })}
                   />
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1 text-[#dc2626]"
-                  onClick={() => setEtapaCadastro(1)}
-                >
+                <Button variant="outline" className="flex-1 text-[#dc2626]" onClick={() => setEtapaCadastro(1)}>
                   ← Voltar
                 </Button>
-                <Button
-                  onClick={handleCadastrarCliente}
-                  className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white"
-                >
+                <Button onClick={handleCadastrarCliente} className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white">
                   Salvar Cliente
                 </Button>
               </div>
@@ -509,7 +435,78 @@ export default function ClientesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {/* MODAL: ALTERAR ENDEREÇO (o que faltava) */}
+      <Dialog open={editarEnderecoOpen} onOpenChange={setEditarEnderecoOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Alterar Endereço{clienteSelecionado ? ` — ${clienteSelecionado.nome}` : ""}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Rua</Label>
+                <Input
+                  value={novoEndereco.rua}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, rua: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Número</Label>
+                <Input
+                  value={novoEndereco.numero}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, numero: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Bairro</Label>
+                <Input
+                  value={novoEndereco.bairro}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, bairro: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Cidade</Label>
+                <Input
+                  value={novoEndereco.cidade}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, cidade: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Estado</Label>
+                <Input
+                  value={novoEndereco.estado}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, estado: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>CEP</Label>
+                <Input
+                  value={novoEndereco.cep}
+                  onChange={(e) => setNovoEndereco({ ...novoEndereco, cep: e.target.value })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="mt-2">
+            <Button variant="outline" onClick={() => setEditarEnderecoOpen(false)}>
+              Cancelar
+            </Button>
+            <Button className="bg-[#dc2626] hover:bg-[#b91c1c] text-white" onClick={handleSalvarEndereco}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: CONFIRMAR EXCLUSÃO */}
       <Dialog
         open={confirmDialog.open}
         onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
@@ -521,16 +518,11 @@ export default function ClientesPage() {
           <DialogFooter className="flex justify-end gap-2">
             <Button
               variant="outline"
-              onClick={() =>
-                setConfirmDialog({ open: false, id: "", nome: "" })
-              }
+              onClick={() => setConfirmDialog({ open: false, id: "", nome: "" })}
             >
               Cancelar
             </Button>
-            <Button
-              className="bg-red-600 hover:bg-red-700 text-white"
-              onClick={handleRemoverCliente}
-            >
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleRemoverCliente}>
               Confirmar
             </Button>
           </DialogFooter>

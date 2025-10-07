@@ -9,6 +9,8 @@ import {
   orderBy,
   serverTimestamp,
   Timestamp,
+  deleteDoc,
+  doc,
 } from "firebase/firestore";
 import { db } from "@/firebase/config";
 import { toast } from "sonner";
@@ -41,6 +43,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import {
   ResponsiveContainer,
@@ -153,6 +167,9 @@ export default function DespesasGerais() {
     motoId: undefined,
   });
 
+  // deleting state
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   useEffect(() => {
     (async () => {
       try {
@@ -173,12 +190,14 @@ export default function DespesasGerais() {
             moto: x.moto ?? null,
           };
         });
-        setDespesas(list);
+
+        // <<< NÃO MOSTRAR despesas da loja (motoId === null)
+        setDespesas(list.filter((d) => !!d.motoId));
 
         // motos
         const mSnap = await getDocs(collection(db, "motos"));
         const motosList: Moto[] = mSnap.docs.map((d) => {
-          const x = d.data() as MotoFS;
+          const x = (d.data() || {}) as MotoFS;
           return {
             id: d.id,
             marca: x.marca,
@@ -255,21 +274,23 @@ export default function DespesasGerais() {
         moto: motoPayload,
       });
 
-      // otimista
-      setDespesas((prev) => [
-        {
-          id: crypto.randomUUID(),
-          descricao: form.descricao,
-          valor: valorNum,
-          data: form.data,
-          categoria: form.categoria || "",
-          obs: form.obs || "",
-          createdAt: null,
-          motoId: form.motoId ?? null,
-          moto: motoPayload,
-        },
-        ...prev,
-      ]);
+      // otimista — <<< só adiciona no estado se TIVER motoId
+      if (form.motoId) {
+        setDespesas((prev) => [
+          {
+            id: crypto.randomUUID(),
+            descricao: form.descricao,
+            valor: valorNum,
+            data: form.data,
+            categoria: form.categoria || "",
+            obs: form.obs || "",
+            createdAt: null,
+            motoId: form.motoId,
+            moto: motoPayload,
+          },
+          ...prev,
+        ]);
+      }
 
       setOpen(false);
       setForm({
@@ -284,6 +305,21 @@ export default function DespesasGerais() {
     } catch (e) {
       console.error(e);
       toast.error("Erro ao lançar despesa.");
+    }
+  };
+
+  // excluir
+  const handleDelete = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await deleteDoc(doc(db, "despesas", id));
+      setDespesas((prev) => prev.filter((x) => x.id !== id));
+      toast.success("Despesa excluída.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Falha ao excluir a despesa.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -311,7 +347,7 @@ export default function DespesasGerais() {
                   onChange={(e) =>
                     setForm((s) => ({ ...s, descricao: e.target.value }))
                   }
-                  placeholder="Ex.: Peças, Funilaria, Taxa, Aluguel..."
+                  placeholder="Ex.: Peças, Funilaria, Taxa..."
                 />
               </div>
 
@@ -348,13 +384,13 @@ export default function DespesasGerais() {
               </div>
 
               <div>
-                <Label>Vincular a uma moto (opcional)</Label>
+                <Label>Vincular a uma moto (obrigatório)</Label>
                 <Select
                   value={form.motoId ?? undefined}
                   onValueChange={(v) => setForm((s) => ({ ...s, motoId: v }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Sem vínculo" />
+                    <SelectValue placeholder="Selecione a moto" />
                   </SelectTrigger>
                   <SelectContent>
                     {motos.map((m) => (
@@ -402,7 +438,7 @@ export default function DespesasGerais() {
         </Card>
         <Card className="p-5">
           <div className="text-sm text-muted-foreground">Lançamentos</div>
-          <div className="text-2xl font-bold mt-1">{qtd}</div>
+          <div className="text-2xl font-bold mt-1">{filtered.length}</div>
         </Card>
         <Card className="p-5">
           <div className="text-sm text-muted-foreground">Período</div>
@@ -427,9 +463,7 @@ export default function DespesasGerais() {
 
       {/* Gráfico */}
       <Card className="mt-6 p-5">
-        <div className="text-sm text-muted-foreground mb-2">
-          Evolução no Período
-        </div>
+        <div className="text-sm text-muted-foreground mb-2">Evolução no Período</div>
         <div className="h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
@@ -437,13 +471,7 @@ export default function DespesasGerais() {
               <XAxis dataKey="month" />
               <YAxis />
               <Tooltip formatter={(v: number | string) => BRL(Number(v))} />
-              <Line
-                type="monotone"
-                dataKey="total"
-                dot
-                strokeWidth={2}
-                isAnimationActive={false}
-              />
+              <Line type="monotone" dataKey="total" dot strokeWidth={2} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -451,14 +479,12 @@ export default function DespesasGerais() {
 
       {/* Busca */}
       <div className="mt-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Input
-            className="w-[320px]"
-            placeholder="Buscar por descrição, categoria ou moto…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <Input
+          className="w-[320px]"
+          placeholder="Buscar por descrição, categoria ou moto…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       {/* Tabela */}
@@ -471,23 +497,16 @@ export default function DespesasGerais() {
               <TableHead>Categoria</TableHead>
               <TableHead>Moto</TableHead>
               <TableHead className="text-right">Valor</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((d) => (
               <TableRow key={d.id}>
+                <TableCell className="whitespace-nowrap">{fmtDate(d.data)}</TableCell>
+                <TableCell className="max-w-[380px] truncate">{d.descricao}</TableCell>
                 <TableCell className="whitespace-nowrap">
-                  {fmtDate(d.data)}
-                </TableCell>
-                <TableCell className="max-w-[380px] truncate">
-                  {d.descricao}
-                </TableCell>
-                <TableCell className="whitespace-nowrap">
-                  {d.categoria ? (
-                    <Badge variant="secondary">{d.categoria}</Badge>
-                  ) : (
-                    "-"
-                  )}
+                  {d.categoria ? <Badge variant="secondary">{d.categoria}</Badge> : "-"}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
                   {d.moto ? (
@@ -498,14 +517,40 @@ export default function DespesasGerais() {
                     "-"
                   )}
                 </TableCell>
-                <TableCell className="text-right font-medium">
-                  {BRL(d.valor)}
+                <TableCell className="text-right font-medium">{BRL(d.valor)}</TableCell>
+                <TableCell className="text-right">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={deletingId === d.id}
+                      >
+                        {deletingId === d.id ? "Excluindo…" : "Excluir"}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir esta despesa?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Esta ação não pode ser desfeita. Isso removerá o lançamento
+                          permanentemente do seu banco de dados.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDelete(d.id)}>
+                          Confirmar exclusão
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </TableCell>
               </TableRow>
             ))}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm py-8">
+                <TableCell colSpan={6} className="text-center text-sm py-8">
                   Nenhuma despesa neste período.
                 </TableCell>
               </TableRow>
