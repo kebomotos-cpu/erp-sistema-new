@@ -4,6 +4,14 @@ import { db } from "@/firebase/config";
 import { saveAs } from "file-saver";
 import HtmlDocx from "html-docx-js-typescript";
 
+// --- Tipos ---
+export type Parcela = {
+  parcela: number;
+  vencimento: string;   // "D/M/AAAA" ou "DD/MM/AAAA"
+  valor: number;        // em reais
+  especie: string;      // BOLETO | PIX | CARTÃO | ENTRADA...
+};
+
 type Venda = {
   id?: string;
   vendedorResponsavel?: string;
@@ -27,7 +35,13 @@ type Venda = {
   entradaExtenso?: string;
   valorParcela?: string;
   valorParcelaExtenso?: string;
-  parcelas?: string;
+
+  // 🔧 Agora aceita string OU array
+  parcelas?: string | Parcela[];
+
+  // 🔧 HTML pronto da tabela (recomendado)
+  parcelasTabelaHtml?: string;
+
   dataHoraEmissao?: string;
   dataVendaPorExtenso?: string;
   cidadeUpper?: string;
@@ -38,6 +52,22 @@ type ContractModels = Record<string, string>; // { [tipoContrato]: html }
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// --- helpers de formatação ---
+const moneyBR = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
+// Converte Parcela[] em texto simples (fallback se o template usar {{parcelas}})
+function renderParcelasTexto(ps?: string | Parcela[]) {
+  if (!ps) return "";
+  if (typeof ps === "string") return ps;
+  return ps
+    .map(
+      (p) =>
+        `${p.parcela} - ${p.vencimento} - ${moneyBR(p.valor)} - ${p.especie}`
+    )
+    .join("\n");
+}
 
 export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) {
   try {
@@ -71,7 +101,7 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
 
     const htmlPreenchido = preencherCampos(modelo, {
       ...vendedorDefault,
-      ...venda, // valores vindos da página têm prioridade
+      ...venda, // prioridade aos valores vindos da página
       dataHoraEmissao: venda.dataHoraEmissao ?? dataHoraEmissao,
       dataVendaPorExtenso: venda.dataVendaPorExtenso ?? dataVendaPorExtenso,
       cidadeUpper: venda.cidade?.toUpperCase() || "",
@@ -91,6 +121,10 @@ export async function gerarContratoFirebase(venda: Venda, tipoContrato: string) 
 function preencherCampos(modelo: string, venda: Venda) {
   if (typeof modelo !== "string") return "";
   const safe = (v: unknown) => (v !== undefined && v !== null ? String(v) : "");
+
+  // 🔧 suporta tanto {{parcelas}} (texto) quanto {{parcelasTabelaHtml}} (HTML)
+  const parcelasTexto = renderParcelasTexto(venda.parcelas);
+  const parcelasTabelaHtml = venda.parcelasTabelaHtml ?? "";
 
   return modelo
     .replace(/{{id}}/g, safe(venda.id))
@@ -119,7 +153,13 @@ function preencherCampos(modelo: string, venda: Venda) {
     .replace(/{{entradaExtenso}}/g, safe(venda.entradaExtenso))
     .replace(/{{valorParcela}}/g, safe(venda.valorParcela))
     .replace(/{{valorParcelaExtenso}}/g, safe(venda.valorParcelaExtenso))
-    .replace(/{{parcelas}}/g, safe(venda.parcelas))
+
+    // 🔧 agora funciona com texto OU array
+    .replace(/{{parcelas}}/g, safe(parcelasTexto))
+
+    // 🔧 placeholder para a tabela idêntica ao modelo
+    .replace(/{{parcelasTabelaHtml}}/g, parcelasTabelaHtml)
+
     .replace(/{{detalhesPagamento}}/g, safe(venda.detalhesPagamento))
     .replace(/{{dataHoraEmissao}}/g, safe(venda.dataHoraEmissao))
     .replace(/{{dataVendaPorExtenso}}/g, safe(venda.dataVendaPorExtenso));
