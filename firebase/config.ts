@@ -6,13 +6,13 @@ import { getStorage } from "firebase/storage";
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyAyV_Q1_LRH406BKZxxL_db8Phlo9EifM8",
-  authDomain: "kebo-motos.firebaseapp.com",
-  projectId: "kebo-motos",
-  storageBucket: "kebo-motos.firebasestorage.app",
-  messagingSenderId: "404928073149",
-  appId: "1:404928073149:web:2db5418a7fd2b33d0f16d4",
-  measurementId: "G-T7ESPRC77E"
+  apiKey: "AIzaSyCalAEZ3eyZOj6uPG5oMwP0yjwsbqJO5v4",
+  authDomain: "kebo-motos-28138.firebaseapp.com",
+  projectId: "kebo-motos-28138",
+  storageBucket: "kebo-motos-28138.firebasestorage.app",
+  messagingSenderId: "221611983403",
+  appId: "1:221611983403:web:8196d617a6fa1f43cd206e",
+  measurementId: "G-GRG874QZRL"
 };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
