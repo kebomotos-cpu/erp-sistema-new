@@ -30,8 +30,8 @@ type Venda = {
   chassi: string;
   km: string;
   formaPagamento: string;
-  entrada: string;           // pode vir como "5.000,00" etc
-  dataVenda: string;         // "YYYY-MM-DD"
+  entrada: string;
+  dataVenda: string; // "YYYY-MM-DD"
   valorVenda: number;
   observacao?: string;
   endereco?: string;
@@ -73,7 +73,6 @@ const firstNonEmpty = (...vals: (string | undefined)[]) => {
 const brToNumber = (s?: string | number) => {
   if (typeof s === "number") return s;
   if (!s) return 0;
-  // remove R$, pontos de milhar e troca vírgula por ponto
   return Number(
     s.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".")
   ) || 0;
@@ -83,7 +82,7 @@ const moneyBR = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 const clampDay = (date: Date, day: number) => {
-  const d = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate(); // último dia do mês alvo
+  const d = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   return Math.min(Math.max(1, day), d);
 };
 
@@ -102,18 +101,15 @@ const gerarParcelas = (opts: {
   const list: Parcela[] = [];
   let idx = 1;
 
-  // Se tiver entrada, entra como parcela 1 (ESPECIE = ENTRADA)
   if (valorEntrada && valorEntrada > 0) {
     list.push({
       parcela: idx++,
-      vencimento: `${base.getDate()}/${base.getMonth() + 1}/${base.getFullYear()}`, // dia da venda
+      vencimento: `${String(base.getDate()).padStart(2,"0")}/${String(base.getMonth() + 1).padStart(2,"0")}/${base.getFullYear()}`,
       valor: valorEntrada,
       especie: "ENTRADA",
     });
   }
 
-  // Demais parcelas mensais
-  // primeira parcela para o mês seguinte no dia escolhido (ajusta para último dia quando necessário)
   for (let i = 1; i <= qtd; i++) {
     const ref = new Date(base);
     ref.setMonth(ref.getMonth() + i);
@@ -122,7 +118,7 @@ const gerarParcelas = (opts: {
 
     list.push({
       parcela: idx++,
-      vencimento: `${day}/${due.getMonth() + 1}/${due.getFullYear()}`,
+      vencimento: `${String(day).padStart(2,"0")}/${String(due.getMonth() + 1).padStart(2,"0")}/${due.getFullYear()}`,
       valor: valorParcela,
       especie,
     });
@@ -130,7 +126,6 @@ const gerarParcelas = (opts: {
 
   return list;
 };
-
 
 const parcelasToHtmlTable = (parcelas: Parcela[]) => {
   return `
@@ -150,7 +145,7 @@ const parcelasToHtmlTable = (parcelas: Parcela[]) => {
       <tr>
         <td style="text-align:center;">${p.parcela}</td>
         <td style="text-align:center;">${p.vencimento}</td>
-        <td style="text-align:right; white-space:nowrap;">R$ ${(p.valor)}</td>
+        <td style="text-align:right; white-space:nowrap;">${moneyBR(p.valor)}</td>
         <td style="text-align:center;">${p.especie}</td>
       </tr>`
       )
@@ -159,15 +154,17 @@ const parcelasToHtmlTable = (parcelas: Parcela[]) => {
 </table>`;
 };
 
-
 export default function HistoricoVendas() {
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [modalDominioOpen, setModalDominioOpen] = useState(false);
-  const [modalEntregaOpen, setModalEntregaOpen] = useState(false);
+
+  // >>> AGORA o diálogo é para CONTRATO LOJA (não mais para Termo de Entrega)
+  const [modalContratoOpen, setModalContratoOpen] = useState(false);
+
   const [antigoDono, setAntigoDono] = useState({ nome: "", cpf: "" });
   const [vendaSelecionada, setVendaSelecionada] = useState<Venda | null>(null);
 
-  // NOVOS CAMPOS DO TERMO
+  // CAMPOS DO CONTRATO (parcelas)
   const [qtdParcelas, setQtdParcelas] = useState<number>(12);
   const [formaParcela, setFormaParcela] = useState<string>("BOLETO");
   const [valorParcela, setValorParcela] = useState<string>("715,00");
@@ -175,7 +172,7 @@ export default function HistoricoVendas() {
   const [valorEntrada, setValorEntrada] = useState<string>(""); // opcional
 
   const [detalhesPagamento, setDetalhesPagamento] = useState(
-    "Obrigando-se o COMPRADOR a efetuar o pagamento conforme quadro de parcelas abaixo."
+    "O COMPRADOR obriga-se a efetuar o pagamento conforme quadro de parcelas abaixo."
   );
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -188,14 +185,12 @@ export default function HistoricoVendas() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 1) vendas
         const vendasSnap = await getDocs(collection(db, "storehistoryc"));
         const vendasList = vendasSnap.docs.map((d) => ({
           id: d.id,
           ...(d.data() as Omit<Venda, "id">),
         })) as Venda[];
 
-        // 2) clientes (endereços)
         const clientesSnap = await getDocs(collection(db, "clientes"));
         const byCpf = new Map<string, ClienteMin>();
         clientesSnap.docs.forEach((doc) => {
@@ -203,7 +198,6 @@ export default function HistoricoVendas() {
           if (c?.cpf) byCpf.set(String(c.cpf).replace(/\D/g, ""), c);
         });
 
-        // 3) motos (fotos)
         const motosSnap = await getDocs(collection(db, "motos"));
         const byChassi = new Map<string, MotoMin>();
         const byPlaca = new Map<string, MotoMin>();
@@ -213,7 +207,6 @@ export default function HistoricoVendas() {
           if (m?.placa) byPlaca.set(norm(m.placa), m);
         });
 
-        // merge endereço + foto
         const merged = vendasList.map((v) => {
           const cpfKey = String(v.cpf ?? "").replace(/\D/g, "");
           const cli = byCpf.get(cpfKey);
@@ -233,7 +226,6 @@ export default function HistoricoVendas() {
           };
         });
 
-        // ordenar por dataVenda desc (fallback id desc)
         merged.sort((a, b) => {
           const ad = a.dataVenda ? new Date(a.dataVenda).getTime() : 0;
           const bd = b.dataVenda ? new Date(b.dataVenda).getTime() : 0;
@@ -262,7 +254,6 @@ export default function HistoricoVendas() {
         {vendasPaginadas.map((venda) => (
           <Card key={venda.id} className="p-6">
             <div className="flex gap-6 items-start">
-              {/* imagem da moto */}
               <div className="w-48 h-32 bg-muted rounded-md overflow-hidden shrink-0">
                 {venda.foto && venda.foto.trim().length > 0 ? (
                   <img
@@ -277,7 +268,6 @@ export default function HistoricoVendas() {
                 )}
               </div>
 
-              {/* info venda */}
               <div className="flex-1">
                 <h3 className="font-semibold text-lg">{venda.clienteNome}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -291,7 +281,6 @@ export default function HistoricoVendas() {
                 </p>
               </div>
 
-              {/* ações */}
               <div className="flex flex-col gap-2">
                 <Button
                   variant="outline"
@@ -302,16 +291,37 @@ export default function HistoricoVendas() {
                   Instrumento de Liberação
                 </Button>
 
+                {/* Termo de Entrega: agora SEM diálogo de parcelas */}
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    await gerarContratoFirebase(
+                      {
+                        ...venda,
+                        dataHoraEmissao: new Date().toLocaleString("pt-BR", {
+                          dateStyle: "full",
+                          timeStyle: "short",
+                        }),
+                        // não passa parcelas nem detalhesPagamento aqui
+                      },
+                      "termoEntrega"
+                    );
+                    toast.success("Termo de Entrega emitido.");
+                  }}
+                >
+                  Termo de Entrega
+                </Button>
+
                 <Button
                   variant="outline"
                   onClick={() => {
                     setVendaSelecionada(venda);
-                    // defaults do modal
+                    // defaults do diálogo de CONTRATO
                     setValorEntrada(venda?.entrada ?? "");
-                    setModalEntregaOpen(true);
+                    setModalContratoOpen(true);
                   }}
                 >
-                  Termo de Entrega
+                  Contrato Loja
                 </Button>
 
                 <Button
@@ -322,15 +332,6 @@ export default function HistoricoVendas() {
                   }}
                 >
                   Reserva de Domínio
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={async () =>
-                    await gerarContratoFirebase(venda, "termoContrato")
-                  }
-                >
-                  Contrato Loja
                 </Button>
 
                 <Button
@@ -404,11 +405,11 @@ export default function HistoricoVendas() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Termo de Entrega */}
-      <Dialog open={modalEntregaOpen} onOpenChange={setModalEntregaOpen}>
+      {/* Modal CONTRATO LOJA (com parcelas) */}
+      <Dialog open={modalContratoOpen} onOpenChange={setModalContratoOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Detalhes do Pagamento</DialogTitle>
+            <DialogTitle>Condições de Pagamento (Contrato Loja)</DialogTitle>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4 mt-2">
@@ -480,7 +481,6 @@ export default function HistoricoVendas() {
             onClick={async () => {
               if (!vendaSelecionada) return;
 
-              // gera estrutura de parcelas + html pronto
               const lista = gerarParcelas({
                 dataVendaISO: vendaSelecionada.dataVenda,
                 qtd: Math.max(1, Number(qtdParcelas || 1)),
@@ -504,20 +504,19 @@ export default function HistoricoVendas() {
                     dateStyle: "full",
                     timeStyle: "short",
                   }),
-
-                  // >>> dados para o template
-                  parcelas: lista,                 // caso o template renderize em loop
-                  parcelasTabelaHtml,              // caso prefira inserir HTML direto
+                  // >>> dados para o template do CONTRATO
+                  parcelas: lista,
+                  parcelasTabelaHtml,
                 },
-                "termoEntrega"
+                "termoContrato" // mantém sua chave existente
               );
 
-              toast.success("Documento gerado com a tabela de parcelas.");
-              setModalEntregaOpen(false);
+              toast.success("Contrato Loja emitido com a tabela de parcelas.");
+              setModalContratoOpen(false);
             }}
             className="w-full mt-4 bg-[#dc2626] hover:bg-[#b91c1c] text-white"
           >
-            Confirmar e Emitir Documento
+            Confirmar e Emitir Contrato
           </Button>
         </DialogContent>
       </Dialog>
