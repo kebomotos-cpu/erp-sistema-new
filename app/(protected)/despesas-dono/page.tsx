@@ -96,7 +96,7 @@ type ExpenseFS = {
   data?: FirestorePrimitiveDate;
 
   valor?: number | string | null;
-  categoria?: string | null; // ex: "Loja" | "Luz" | "Imposto" | "teste"
+  categoria?: string | null; 
   tipo?: string | null;      // "loja" | "geral" (heurística se vier vazio)
   descricao?: string | null;
 
