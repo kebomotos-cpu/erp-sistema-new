@@ -265,34 +265,23 @@ export default function ClientesPage() {
             onClick={() => setModalOpen(true)}
             className="bg-[#dc2626] hover:bg-[#b91c1c] text-white whitespace-nowrap"
           >
-            <UserPlus className="mr-2 h-4 w-4" /> Novo
+            <UserPlus className="mr-2 h-4 w-4" /> Novo Cliente
           </Button>
         </div>
       </div>
 
       {clientesFiltrados.length === 0 && (
-        <p className="text-muted-foreground">
-          Nenhum cliente encontrado.
-        </p>
+        <p className="text-muted-foreground text-sm">Nenhum cliente encontrado.</p>
       )}
 
-      {/* LISTA DE CLIENTES */}
+      {/* LISTA */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {clientesFiltrados.map((cliente) => (
-          <Card
-            key={cliente.id}
-            className="p-6 hover:shadow-lg transition-shadow relative"
-          >
+          <Card key={cliente.id} className="p-6 hover:shadow-lg transition-shadow relative">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() =>
-                setConfirmDialog({
-                  open: true,
-                  id: cliente.id,
-                  nome: cliente.nome,
-                })
-              }
+              onClick={() => setConfirmDialog({ open: true, id: cliente.id, nome: cliente.nome })}
               className="absolute top-2 right-2 text-red-600 hover:text-red-800"
             >
               <Trash2 className="h-5 w-5" />
@@ -321,9 +310,7 @@ export default function ClientesPage() {
             <div className="flex items-center gap-4 mt-5">
               <Avatar className="w-14 h-14 border">
                 <AvatarImage src={cliente.avatar} alt={cliente.nome} />
-                <AvatarFallback>
-                  {cliente.nome.charAt(0)}
-                </AvatarFallback>
+                <AvatarFallback>{cliente.nome.charAt(0)}</AvatarFallback>
               </Avatar>
               <div>
                 <h3 className="font-semibold text-lg">{cliente.nome}</h3>
@@ -334,28 +321,188 @@ export default function ClientesPage() {
             </div>
 
             <div className="mt-4 text-sm text-muted-foreground space-y-1">
-              <p>
-                <strong>CPF:</strong> {cliente.cpf}
-              </p>
-              <p>
-                <strong>Telefone:</strong> {cliente.telefone}
-              </p>
-              <p>
-                <strong>Email:</strong> {cliente.email}
-              </p>
-              <p>
-                <strong>Endereço:</strong> {cliente.endereco}
-              </p>
+              <p><strong>CPF:</strong> {cliente.cpf}</p>
+              <p><strong>Telefone:</strong> {cliente.telefone}</p>
+              <p><strong>Email:</strong> {cliente.email}</p>
+              <p><strong>Endereço:</strong> {cliente.endereco}</p>
             </div>
           </Card>
         ))}
       </div>
 
-      {/* MODAIS (mantidos iguais) */}
-      {/* MODAL: CADASTRAR CLIENTE */}
-      {/* MODAL: ALTERAR ENDEREÇO */}
-      {/* MODAL: CONFIRMAR EXCLUSÃO */}
-      {/* (os blocos existentes permanecem inalterados do seu código original) */}
+      {/* === MODAIS === */}
+      {/* CADASTRO DE CLIENTE */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              {etapaCadastro === 1 ? "Cadastrar Novo Cliente" : "Endereço do Cliente"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {etapaCadastro === 1 ? (
+            <div className="space-y-4">
+              <Label>Selecione o Avatar</Label>
+              <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {defaultAvatars.map((avatar, i) => (
+                  <div
+                    key={i}
+                    className={`p-1 rounded-lg border cursor-pointer flex justify-center ${
+                      avatarSelecionado === avatar ? "border-[#dc2626]" : "border-muted"
+                    }`}
+                    onClick={() => setAvatarSelecionado(avatar)}
+                  >
+                    <Avatar className="w-14 h-14">
+                      <AvatarImage src={avatar} alt={`Avatar ${i + 1}`} />
+                      <AvatarFallback>A{i + 1}</AvatarFallback>
+                    </Avatar>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Nome Completo</Label>
+                  <Input
+                    value={novoCliente.nome}
+                    onChange={(e) => setNovoCliente({ ...novoCliente, nome: e.target.value })}
+                    placeholder="Ex: João da Silva"
+                  />
+                </div>
+                <div>
+                  <Label>CPF</Label>
+                  <Input
+                    value={novoCliente.cpf}
+                    onChange={(e) => setNovoCliente({ ...novoCliente, cpf: e.target.value })}
+                    placeholder="000.000.000-00"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Telefone</Label>
+                  <Input
+                    value={novoCliente.telefone}
+                    onChange={(e) => setNovoCliente({ ...novoCliente, telefone: e.target.value })}
+                    placeholder="(47) 99999-9999"
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    value={novoCliente.email}
+                    onChange={(e) => setNovoCliente({ ...novoCliente, email: e.target.value })}
+                    placeholder="email@exemplo.com"
+                  />
+                </div>
+              </div>
+
+              <Button
+                onClick={handleCadastrarCliente}
+                className="w-full bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+              >
+                Próximo →
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Rua</Label>
+                  <Input value={enderecoCliente.rua} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, rua: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Número</Label>
+                  <Input value={enderecoCliente.numero} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, numero: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Bairro</Label>
+                  <Input value={enderecoCliente.bairro} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, bairro: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Cidade</Label>
+                  <Input value={enderecoCliente.cidade} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cidade: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Estado</Label>
+                  <Input value={enderecoCliente.estado} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, estado: e.target.value })} />
+                </div>
+                <div>
+                  <Label>CEP</Label>
+                  <Input value={enderecoCliente.cep} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cep: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1 text-[#dc2626]" onClick={() => setEtapaCadastro(1)}>
+                  ← Voltar
+                </Button>
+                <Button onClick={handleCadastrarCliente} className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white">
+                  Salvar Cliente
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ALTERAR ENDEREÇO */}
+      <Dialog open={editarEnderecoOpen} onOpenChange={setEditarEnderecoOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Alterar Endereço {clienteSelecionado ? `— ${clienteSelecionado.nome}` : ""}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {["rua", "numero", "bairro", "cidade", "estado", "cep"].map((campo) => (
+              <div key={campo}>
+                <Label className="capitalize">{campo}</Label>
+                <Input
+                  value={(novoEndereco as any)[campo]}
+                  onChange={(e) =>
+                    setNovoEndereco({ ...novoEndereco, [campo]: e.target.value })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setEditarEnderecoOpen(false)}>
+              Cancelar
+            </Button>
+            <Button className="bg-[#dc2626] hover:bg-[#b91c1c] text-white" onClick={handleSalvarEndereco}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMAR EXCLUSÃO */}
+      <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remover cliente {confirmDialog.nome}?</DialogTitle>
+          </DialogHeader>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmDialog({ open: false, id: "", nome: "" })}>
+              Cancelar
+            </Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleRemoverCliente}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
