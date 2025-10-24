@@ -38,6 +38,24 @@ interface Cliente {
   extras?: Record<string, string>;
 }
 
+type Endereco = {
+  rua: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  estado: string;
+  cep: string;
+};
+
+const camposEndereco: (keyof Endereco)[] = [
+  "rua",
+  "numero",
+  "bairro",
+  "cidade",
+  "estado",
+  "cep",
+];
+
 const defaultAvatars = [
   "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/9439775.jpg-4JVJWOjPksd3DtnBYJXoWHA5lc1DU9.jpeg",
   "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/375238645_11475210.jpg-lU8bOe6TLt5Rv51hgjg8NT8PsDBmvN.jpeg",
@@ -51,14 +69,7 @@ const defaultAvatars = [
   "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/9334228.jpg-eOsHCkvVrVAwcPHKYSs5sQwVKsqWpC.jpeg",
 ];
 
-const formatEndereco = (e: {
-  rua: string;
-  numero: string;
-  bairro: string;
-  cidade: string;
-  estado: string;
-  cep: string;
-}) =>
+const formatEndereco = (e: Endereco) =>
   `${e.rua}, ${e.numero} - ${e.bairro}, ${e.cidade} - ${e.estado}, CEP ${e.cep}`;
 
 export default function ClientesPage() {
@@ -66,7 +77,7 @@ export default function ClientesPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   // Cadastro (2 etapas)
-  const [etapaCadastro, setEtapaCadastro] = useState(1);
+  const [etapaCadastro, setEtapaCadastro] = useState<1 | 2>(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [avatarSelecionado, setAvatarSelecionado] = useState(defaultAvatars[0]);
 
@@ -82,7 +93,7 @@ export default function ClientesPage() {
     extras: {},
   });
 
-  const [enderecoCliente, setEnderecoCliente] = useState({
+  const [enderecoCliente, setEnderecoCliente] = useState<Endereco>({
     rua: "",
     numero: "",
     bairro: "",
@@ -96,7 +107,7 @@ export default function ClientesPage() {
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(
     null
   );
-  const [novoEndereco, setNovoEndereco] = useState({
+  const [novoEndereco, setNovoEndereco] = useState<Endereco>({
     rua: "",
     numero: "",
     bairro: "",
@@ -116,9 +127,30 @@ export default function ClientesPage() {
   const clientesFiltrados = useMemo(() => {
     const t = searchTerm.trim().toLowerCase();
     if (!t) return clientes;
-    return clientes.filter((c) =>
-      Object.values(c).some((v) => String(v).toLowerCase().includes(t))
-    );
+    return clientes.filter((c) => {
+      const base = [
+        c.nome,
+        c.cpf,
+        c.email,
+        c.telefone,
+        c.endereco,
+        c.cidade,
+        c.estado,
+      ]
+        .filter(Boolean)
+        .map((x) => String(x).toLowerCase());
+
+      if (c.extras) {
+        base.push(
+          ...Object.entries(c.extras).flatMap(([k, v]) => [
+            k.toLowerCase(),
+            String(v).toLowerCase(),
+          ])
+        );
+      }
+
+      return base.some((v) => v.includes(t));
+    });
   }, [clientes, searchTerm]);
 
   // Buscar clientes (primeira carga)
@@ -198,7 +230,7 @@ export default function ClientesPage() {
     // preenchimento inicial “melhor esforço”
     const partes = cliente.endereco?.split(",") ?? [];
     setNovoEndereco({
-      rua: partes[0] || "",
+      rua: partes[0]?.trim() || "",
       numero: "",
       bairro: "",
       cidade: cliente.cidade || "",
@@ -258,7 +290,7 @@ export default function ClientesPage() {
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar cliente por nome, CPF, telefone, e-mail, cidade…"
+              placeholder="Buscar por nome, CPF, telefone, e-mail, cidade…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-8"
@@ -329,7 +361,9 @@ export default function ClientesPage() {
         open={modalOpen}
         onOpenChange={(open) => {
           setModalOpen(open);
-          if (!open) resetCadastro();
+          if (!open) {
+            resetCadastro();
+          }
         }}
       >
         <DialogContent className="max-w-3xl">
@@ -496,13 +530,13 @@ export default function ClientesPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {["rua", "numero", "bairro", "cidade", "estado", "cep"].map((campo) => (
+            {camposEndereco.map((campo) => (
               <div key={campo}>
                 <Label className="capitalize">{campo}</Label>
                 <Input
-                  value={(novoEndereco as any)[campo]}
+                  value={novoEndereco[campo]}
                   onChange={(e) =>
-                    setNovoEndereco({ ...novoEndereco, [campo]: e.target.value })
+                    setNovoEndereco((prev) => ({ ...prev, [campo]: e.target.value }))
                   }
                 />
               </div>
