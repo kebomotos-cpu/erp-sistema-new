@@ -65,27 +65,10 @@ export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // --- filtros de busca ---
-  const clientesFiltrados = useMemo(() => {
-    const t = searchTerm.trim().toLowerCase();
-    if (!t) return clientes;
-    return clientes.filter((c) =>
-      Object.values(c).some((v) =>
-        String(v).toLowerCase().includes(t)
-      )
-    );
-  }, [clientes, searchTerm]);
-
-  // --- Estados do cadastro ---
+  // Cadastro (2 etapas)
   const [etapaCadastro, setEtapaCadastro] = useState(1);
-  const [enderecoCliente, setEnderecoCliente] = useState({
-    rua: "",
-    numero: "",
-    bairro: "",
-    cidade: "",
-    estado: "",
-    cep: "",
-  });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [avatarSelecionado, setAvatarSelecionado] = useState(defaultAvatars[0]);
 
   const [novoCliente, setNovoCliente] = useState<Omit<Cliente, "id">>({
     nome: "",
@@ -99,10 +82,16 @@ export default function ClientesPage() {
     extras: {},
   });
 
-  const [extras, setExtras] = useState<{ key: string; value: string }[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [enderecoCliente, setEnderecoCliente] = useState({
+    rua: "",
+    numero: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
+    cep: "",
+  });
 
-  // edição de endereço
+  // Edição de endereço
   const [editarEnderecoOpen, setEditarEnderecoOpen] = useState(false);
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(
     null
@@ -116,17 +105,23 @@ export default function ClientesPage() {
     cep: "",
   });
 
-  const [avatarSelecionado, setAvatarSelecionado] = useState(defaultAvatars[0]);
-  const [confirmDialog, setConfirmDialog] = useState<{
-    open: boolean;
-    id: string;
-    nome: string;
-  }>({
+  // Confirmação de exclusão
+  const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     id: "",
     nome: "",
   });
 
+  // Filtro de busca
+  const clientesFiltrados = useMemo(() => {
+    const t = searchTerm.trim().toLowerCase();
+    if (!t) return clientes;
+    return clientes.filter((c) =>
+      Object.values(c).some((v) => String(v).toLowerCase().includes(t))
+    );
+  }, [clientes, searchTerm]);
+
+  // Buscar clientes (primeira carga)
   useEffect(() => {
     const fetchClientes = async () => {
       const snapshot = await getDocs(collection(db, "clientes"));
@@ -139,6 +134,32 @@ export default function ClientesPage() {
     fetchClientes();
   }, []);
 
+  // Util: reset do wizard de cadastro
+  const resetCadastro = () => {
+    setEtapaCadastro(1);
+    setAvatarSelecionado(defaultAvatars[0]);
+    setNovoCliente({
+      nome: "",
+      cpf: "",
+      email: "",
+      telefone: "",
+      endereco: "",
+      cidade: "",
+      estado: "",
+      avatar: defaultAvatars[0],
+      extras: {},
+    });
+    setEnderecoCliente({
+      rua: "",
+      numero: "",
+      bairro: "",
+      cidade: "",
+      estado: "",
+      cep: "",
+    });
+  };
+
+  // Cadastrar cliente
   const handleCadastrarCliente = async () => {
     if (etapaCadastro === 1) {
       if (!novoCliente.nome || !novoCliente.cpf) {
@@ -154,54 +175,70 @@ export default function ClientesPage() {
         ...novoCliente,
         endereco: formatEndereco(enderecoCliente),
         avatar: avatarSelecionado,
-        extras: extras.reduce(
-          (acc, curr) => ({ ...acc, [curr.key]: curr.value }),
-          {}
-        ),
       };
 
       const docRef = await addDoc(collection(db, "clientes"), cliente);
       setClientes((prev) => [...prev, { id: docRef.id, ...cliente }]);
-      setModalOpen(false);
-
-      // reset
-      setNovoCliente({
-        nome: "",
-        cpf: "",
-        email: "",
-        telefone: "",
-        endereco: "",
-        cidade: "",
-        estado: "",
-        avatar: defaultAvatars[0],
-        extras: {},
-      });
-      setEnderecoCliente({
-        rua: "",
-        numero: "",
-        bairro: "",
-        cidade: "",
-        estado: "",
-        cep: "",
-      });
-      setExtras([]);
-      setEtapaCadastro(1);
 
       toast.success("Cliente cadastrado com sucesso!", {
         description: `Cliente ${cliente.nome} adicionado ao sistema.`,
       });
+
+      setModalOpen(false);
+      resetCadastro();
     } catch (error) {
-      console.error("Erro ao cadastrar cliente:", error);
+      console.error(error);
       toast.error("Erro ao cadastrar cliente.");
     }
   };
 
+  // Abrir modal de edição de endereço
+  const handleAbrirEditarEndereco = (cliente: Cliente) => {
+    setClienteSelecionado(cliente);
+    // preenchimento inicial “melhor esforço”
+    const partes = cliente.endereco?.split(",") ?? [];
+    setNovoEndereco({
+      rua: partes[0] || "",
+      numero: "",
+      bairro: "",
+      cidade: cliente.cidade || "",
+      estado: cliente.estado || "",
+      cep: "",
+    });
+    // pequeno delay evita glitch de render no shadcn
+    setTimeout(() => setEditarEnderecoOpen(true), 20);
+  };
+
+  // Salvar endereço atualizado
+  const handleSalvarEndereco = async () => {
+    if (!clienteSelecionado) return;
+
+    try {
+      const enderecoCompleto = formatEndereco(novoEndereco);
+      const clienteRef = doc(db, "clientes", clienteSelecionado.id);
+
+      await updateDoc(clienteRef, { endereco: enderecoCompleto });
+
+      setClientes((prev) =>
+        prev.map((c) =>
+          c.id === clienteSelecionado.id ? { ...c, endereco: enderecoCompleto } : c
+        )
+      );
+
+      toast.success("Endereço atualizado com sucesso!");
+      setEditarEnderecoOpen(false);
+      setClienteSelecionado(null);
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao atualizar endereço.");
+    }
+  };
+
+  // Remover cliente
   const handleRemoverCliente = async () => {
     try {
       await deleteDoc(doc(db, "clientes", confirmDialog.id));
-      setClientes((prev) =>
-        prev.filter((c) => c.id !== confirmDialog.id)
-      );
+      setClientes((prev) => prev.filter((c) => c.id !== confirmDialog.id));
       setConfirmDialog({ open: false, id: "", nome: "" });
       toast.success("Cliente removido com sucesso!", {
         description: `Cliente ${confirmDialog.nome} foi excluído.`,
@@ -211,43 +248,9 @@ export default function ClientesPage() {
     }
   };
 
-  const handleSalvarEndereco = async () => {
-    if (!clienteSelecionado) return;
-
-    try {
-      const enderecoCompleto = formatEndereco(novoEndereco);
-      const clienteRef = doc(db, "clientes", clienteSelecionado.id);
-
-      await addDoc(collection(db, "clientes_edicoes"), {
-        clienteId: clienteSelecionado.id,
-        tipo: "atualizacao_endereco",
-        data: new Date().toISOString(),
-        enderecoAntigo: clienteSelecionado.endereco,
-        enderecoNovo: enderecoCompleto,
-      });
-
-      await updateDoc(clienteRef, { endereco: enderecoCompleto });
-
-      setClientes((prev) =>
-        prev.map((c) =>
-          c.id === clienteSelecionado.id
-            ? { ...c, endereco: enderecoCompleto }
-            : c
-        )
-      );
-
-      toast.success("Endereço atualizado com sucesso!");
-      setEditarEnderecoOpen(false);
-      setClienteSelecionado(null);
-    } catch (error) {
-      console.error("Erro ao atualizar endereço:", error);
-      toast.error("Erro ao atualizar endereço.");
-    }
-  };
-
   return (
     <div className="space-y-6 p-6">
-      {/* HEADER + BUSCA */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h1 className="text-3xl font-bold text-[#dc2626]">Cadastro de Clientes</h1>
 
@@ -255,7 +258,7 @@ export default function ClientesPage() {
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar cliente por nome, CPF, telefone..."
+              placeholder="Buscar cliente por nome, CPF, telefone, e-mail, cidade…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-8"
@@ -263,76 +266,72 @@ export default function ClientesPage() {
           </div>
           <Button
             onClick={() => setModalOpen(true)}
-            className="bg-[#dc2626] hover:bg-[#b91c1c] text-white whitespace-nowrap"
+            className="bg-[#dc2626] hover:bg-[#b91c1c] text-white"
           >
             <UserPlus className="mr-2 h-4 w-4" /> Novo Cliente
           </Button>
         </div>
       </div>
 
-      {clientesFiltrados.length === 0 && (
+      {/* LISTA */}
+      {clientesFiltrados.length === 0 ? (
         <p className="text-muted-foreground text-sm">Nenhum cliente encontrado.</p>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {clientesFiltrados.map((cliente) => (
+            <Card key={cliente.id} className="p-6 hover:shadow-lg relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setConfirmDialog({ open: true, id: cliente.id, nome: cliente.nome })
+                }
+                className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+              >
+                <Trash2 className="h-5 w-5" />
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="absolute top-2 right-12 text-[#dc2626] hover:bg-[#dc2626] hover:text-white"
+                onClick={() => handleAbrirEditarEndereco(cliente)}
+              >
+                Alterar Endereço
+              </Button>
+
+              <div className="flex items-center gap-4 mt-5">
+                <Avatar className="w-14 h-14 border">
+                  <AvatarImage src={cliente.avatar} alt={cliente.nome} />
+                  <AvatarFallback>{cliente.nome.charAt(0)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <h3 className="font-semibold text-lg">{cliente.nome}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {cliente.cidade} - {cliente.estado}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 text-sm text-muted-foreground space-y-1">
+                <p><strong>CPF:</strong> {cliente.cpf}</p>
+                <p><strong>Telefone:</strong> {cliente.telefone}</p>
+                <p><strong>Email:</strong> {cliente.email}</p>
+                <p><strong>Endereço:</strong> {cliente.endereco}</p>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
 
-      {/* LISTA */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {clientesFiltrados.map((cliente) => (
-          <Card key={cliente.id} className="p-6 hover:shadow-lg transition-shadow relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setConfirmDialog({ open: true, id: cliente.id, nome: cliente.nome })}
-              className="absolute top-2 right-2 text-red-600 hover:text-red-800"
-            >
-              <Trash2 className="h-5 w-5" />
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="absolute top-2 right-12 text-[#dc2626] hover:bg-[#dc2626] hover:text-white"
-              onClick={() => {
-                setClienteSelecionado(cliente);
-                setEditarEnderecoOpen(true);
-                setNovoEndereco({
-                  rua: "",
-                  numero: "",
-                  bairro: "",
-                  cidade: cliente.cidade || "",
-                  estado: cliente.estado || "",
-                  cep: "",
-                });
-              }}
-            >
-              Alterar Endereço
-            </Button>
-
-            <div className="flex items-center gap-4 mt-5">
-              <Avatar className="w-14 h-14 border">
-                <AvatarImage src={cliente.avatar} alt={cliente.nome} />
-                <AvatarFallback>{cliente.nome.charAt(0)}</AvatarFallback>
-              </Avatar>
-              <div>
-                <h3 className="font-semibold text-lg">{cliente.nome}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {cliente.cidade} - {cliente.estado}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 text-sm text-muted-foreground space-y-1">
-              <p><strong>CPF:</strong> {cliente.cpf}</p>
-              <p><strong>Telefone:</strong> {cliente.telefone}</p>
-              <p><strong>Email:</strong> {cliente.email}</p>
-              <p><strong>Endereço:</strong> {cliente.endereco}</p>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* === MODAIS === */}
-      {/* CADASTRO DE CLIENTE */}
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+      {/* === MODAL: CADASTRAR NOVO CLIENTE (2 ETAPAS) === */}
+      <Dialog
+        open={modalOpen}
+        onOpenChange={(open) => {
+          setModalOpen(open);
+          if (!open) resetCadastro();
+        }}
+      >
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
@@ -342,24 +341,31 @@ export default function ClientesPage() {
 
           {etapaCadastro === 1 ? (
             <div className="space-y-4">
-              <Label>Selecione o Avatar</Label>
-              <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                {defaultAvatars.map((avatar, i) => (
-                  <div
-                    key={i}
-                    className={`p-1 rounded-lg border cursor-pointer flex justify-center ${
-                      avatarSelecionado === avatar ? "border-[#dc2626]" : "border-muted"
-                    }`}
-                    onClick={() => setAvatarSelecionado(avatar)}
-                  >
-                    <Avatar className="w-14 h-14">
-                      <AvatarImage src={avatar} alt={`Avatar ${i + 1}`} />
-                      <AvatarFallback>A{i + 1}</AvatarFallback>
-                    </Avatar>
-                  </div>
-                ))}
+              {/* Avatares */}
+              <div>
+                <Label className="mb-2 block">Selecione o Avatar</Label>
+                <div className="grid sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {defaultAvatars.map((avatar, i) => (
+                    <div
+                      key={i}
+                      className={`p-1 rounded-lg border cursor-pointer flex justify-center ${
+                        avatarSelecionado === avatar ? "border-[#dc2626]" : "border-muted"
+                      }`}
+                      onClick={() => {
+                        setAvatarSelecionado(avatar);
+                        setNovoCliente((n) => ({ ...n, avatar }));
+                      }}
+                    >
+                      <Avatar className="w-14 h-14">
+                        <AvatarImage src={avatar} alt={`Avatar ${i + 1}`} />
+                        <AvatarFallback>A{i + 1}</AvatarFallback>
+                      </Avatar>
+                    </div>
+                  ))}
+                </div>
               </div>
 
+              {/* Campos básicos */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Nome Completo</Label>
@@ -391,6 +397,7 @@ export default function ClientesPage() {
                 <div>
                   <Label>Email</Label>
                   <Input
+                    type="email"
                     value={novoCliente.email}
                     onChange={(e) => setNovoCliente({ ...novoCliente, email: e.target.value })}
                     placeholder="email@exemplo.com"
@@ -407,44 +414,70 @@ export default function ClientesPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Endereço */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Rua</Label>
-                  <Input value={enderecoCliente.rua} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, rua: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.rua}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, rua: e.target.value })}
+                  />
                 </div>
                 <div>
                   <Label>Número</Label>
-                  <Input value={enderecoCliente.numero} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, numero: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.numero}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, numero: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Bairro</Label>
-                  <Input value={enderecoCliente.bairro} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, bairro: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.bairro}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, bairro: e.target.value })}
+                  />
                 </div>
                 <div>
                   <Label>Cidade</Label>
-                  <Input value={enderecoCliente.cidade} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cidade: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.cidade}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cidade: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Estado</Label>
-                  <Input value={enderecoCliente.estado} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, estado: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.estado}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, estado: e.target.value })}
+                  />
                 </div>
                 <div>
                   <Label>CEP</Label>
-                  <Input value={enderecoCliente.cep} onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cep: e.target.value })} />
+                  <Input
+                    value={enderecoCliente.cep}
+                    onChange={(e) => setEnderecoCliente({ ...enderecoCliente, cep: e.target.value })}
+                  />
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1 text-[#dc2626]" onClick={() => setEtapaCadastro(1)}>
+                <Button
+                  variant="outline"
+                  className="flex-1 text-[#dc2626]"
+                  onClick={() => setEtapaCadastro(1)}
+                >
                   ← Voltar
                 </Button>
-                <Button onClick={handleCadastrarCliente} className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white">
+                <Button
+                  onClick={handleCadastrarCliente}
+                  className="flex-1 bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+                >
                   Salvar Cliente
                 </Button>
               </div>
@@ -453,7 +486,7 @@ export default function ClientesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ALTERAR ENDEREÇO */}
+      {/* === MODAL: ALTERAR ENDEREÇO === */}
       <Dialog open={editarEnderecoOpen} onOpenChange={setEditarEnderecoOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -480,24 +513,36 @@ export default function ClientesPage() {
             <Button variant="outline" onClick={() => setEditarEnderecoOpen(false)}>
               Cancelar
             </Button>
-            <Button className="bg-[#dc2626] hover:bg-[#b91c1c] text-white" onClick={handleSalvarEndereco}>
+            <Button
+              className="bg-[#dc2626] hover:bg-[#b91c1c] text-white"
+              onClick={handleSalvarEndereco}
+            >
               Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* CONFIRMAR EXCLUSÃO */}
-      <Dialog open={confirmDialog.open} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}>
+      {/* === MODAL: CONFIRMAR EXCLUSÃO === */}
+      <Dialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Remover cliente {confirmDialog.nome}?</DialogTitle>
           </DialogHeader>
           <DialogFooter className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirmDialog({ open: false, id: "", nome: "" })}>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialog({ open: false, id: "", nome: "" })}
+            >
               Cancelar
             </Button>
-            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={handleRemoverCliente}>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleRemoverCliente}
+            >
               Confirmar
             </Button>
           </DialogFooter>
